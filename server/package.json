@@ -1,0 +1,33 @@
+{
+  "name": "server",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "node --watch src/index.js",
+    "start": "node src/index.js",
+    "db:migrate": "prisma migrate dev",
+    "db:generate": "prisma generate",
+    "db:seed": "node prisma/seed.js",
+    "simulate": "node src/simulator/chargePoint.js",
+    "simulate:idp": "node src/simulator/samlIdp.js",
+    "test": "node --import ./test/env.setup.js --test --test-concurrency=1 test/*.test.js"
+  },
+  "dependencies": {
+    "@node-saml/node-saml": "^5.1.0",
+    "@prisma/client": "5.20.0",
+    "bcryptjs": "^3.0.3",
+    "cors": "^2.8.6",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "jsonwebtoken": "^9.0.3",
+    "ocpp-rpc": "^2.2.1",
+    "otplib": "^12.0.1",
+    "qrcode": "^1.5.4"
+  },
+  "devDependencies": {
+    "prisma": "5.20.0",
+    "supertest": "^7.2.2",
+    "xml-crypto": "^6.1.2"
+  }
+}

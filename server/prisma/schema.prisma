@@ -1,0 +1,173 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Admin {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  // Null for SSO-only accounts that authenticate exclusively via SAML.
+  passwordHash String?
+  mfaSecret    String?
+  mfaEnabled   Boolean  @default(false)
+  createdAt    DateTime @default(now())
+}
+
+// Single row (id always "singleton") holding white-label branding and
+// waitlist-identifier configuration for the whole deployment.
+model Settings {
+  id             String   @id
+  companyName    String   @default("EV Waitlist")
+  logoUrl        String?
+  primaryColor   String   @default("#0d7a5f")
+  secondaryColor String   @default("#1565c0")
+  fontFamily     String?
+  // LICENSE_PLATE | PARKING_PERMIT | BOTH -- which identifier(s) the public
+  // waitlist join form collects.
+  identifierMode String   @default("LICENSE_PLATE")
+  // When true, admin accounts without MFA enabled are forced to enroll
+  // (TOTP) the next time they log in.
+  mfaRequired    Boolean  @default(false)
+  updatedAt      DateTime @updatedAt
+}
+
+// Single row (id always "singleton") holding this deployment's SAML
+// service-provider configuration for a single external identity provider.
+model SamlConfig {
+  id             String   @id
+  enabled        Boolean  @default(false)
+  idpEntityId    String?
+  idpSsoUrl      String?
+  idpCertificate String?
+  // When true, a SAML assertion for an email with no matching Admin
+  // auto-creates an SSO-only account. When false, that login is rejected.
+  autoProvision  Boolean  @default(false)
+  updatedAt      DateTime @updatedAt
+}
+
+// A group of stations (e.g. "Parking Garage P1") that share a single
+// waitlist -- whichever station in the zone frees a connector first serves
+// the next person in the zone's line, rather than each station keeping its
+// own separate line.
+model Zone {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  createdAt DateTime @default(now())
+
+  stations    Station[]
+  queueEntries QueueEntry[]
+}
+
+model Station {
+  id        String   @id @default(cuid())
+  // OCPP "identity" -- the charge point ID used in the websocket URL
+  // (ws://host:port/ocpp/<identity>) and in every OCPP message exchange.
+  identity  String   @unique
+  name      String
+  vendor    String?
+  model     String?
+  location  String?
+  // Null for a standalone station with its own waitlist.
+  zone      Zone?    @relation(fields: [zoneId], references: [id])
+  zoneId    String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  connectors        Connector[]
+  queueEntries      QueueEntry[]
+  reservations      Reservation[]
+  transactions      Transaction[]
+  lineCutterReports LineCutterReport[]
+}
+
+model Connector {
+  id          String   @id @default(cuid())
+  station     Station  @relation(fields: [stationId], references: [id], onDelete: Cascade)
+  stationId   String
+  // OCPP connectorId (0 = whole station, 1..n = physical connectors)
+  connectorId Int
+  status      String   @default("Unavailable")
+  errorCode   String?
+  updatedAt   DateTime @updatedAt
+
+  @@unique([stationId, connectorId])
+}
+
+// A person waiting in line for a station -- or, for a zoned station, for the
+// zone as a whole. Independent of which physical connector they eventually
+// get -- the dispatcher assigns that at match time.
+//
+// Exactly one of (stationId, zoneId) is set at join time: joining a
+// standalone station's waitlist sets stationId; joining a zone's shared
+// waitlist sets zoneId instead, and stationId is filled in once the
+// dispatcher matches the entry to a specific station's freed connector.
+model QueueEntry {
+  id            String   @id @default(cuid())
+  station       Station? @relation(fields: [stationId], references: [id], onDelete: Cascade)
+  stationId     String?
+  zone          Zone?    @relation(fields: [zoneId], references: [id], onDelete: Cascade)
+  zoneId        String?
+  name          String
+  contact       String
+  idTag         String
+  licensePlate  String?
+  parkingPermit String?
+  // WAITING -> NOTIFIED -> COMPLETED
+  //         -> EXPIRED / CANCELLED
+  status        String   @default("WAITING")
+  position      Int
+  createdAt     DateTime @default(now())
+
+  reservation       Reservation?
+  lineCutterReports LineCutterReport[]
+}
+
+// A hold placed on a specific connector for a specific queue entry, mirrored
+// (when the station supports it) by an OCPP ReserveNow call.
+model Reservation {
+  id                String    @id @default(cuid())
+  queueEntry        QueueEntry @relation(fields: [queueEntryId], references: [id], onDelete: Cascade)
+  queueEntryId      String    @unique
+  station           Station   @relation(fields: [stationId], references: [id], onDelete: Cascade)
+  stationId         String
+  connectorId       Int
+  // Null when the charge point doesn't support ReserveNow and we fall back
+  // to a soft (app-only) hold.
+  ocppReservationId Int?
+  expiresAt         DateTime
+  // ACTIVE -> FULFILLED / EXPIRED / CANCELLED
+  status            String    @default("ACTIVE")
+  createdAt         DateTime  @default(now())
+}
+
+// A driver-submitted report that someone else took their spot at a station
+// (e.g. plugged in without having been notified/reserved). Surfaced to
+// admins to review and act on manually.
+model LineCutterReport {
+  id           String     @id @default(cuid())
+  station      Station    @relation(fields: [stationId], references: [id], onDelete: Cascade)
+  stationId    String
+  queueEntry   QueueEntry @relation(fields: [queueEntryId], references: [id], onDelete: Cascade)
+  queueEntryId String
+  note         String?
+  // OPEN -> RESOLVED / DISMISSED
+  status       String     @default("OPEN")
+  createdAt    DateTime   @default(now())
+}
+
+model Transaction {
+  id                String    @id @default(cuid())
+  station           Station   @relation(fields: [stationId], references: [id], onDelete: Cascade)
+  stationId         String
+  connectorId       Int
+  idTag             String
+  ocppTransactionId Int
+  meterStart        Int?
+  meterStop         Int?
+  startedAt         DateTime  @default(now())
+  stoppedAt         DateTime?
+}
