@@ -11,3 +11,12 @@ api.interceptors.request.use((config) => {
   }
   return config;
 });
+
+// The server refuses admin calls until a first-run admin changes their
+// passphrase. Tell the auth context so it can send the user to that screen.
+api.interceptors.response.use(undefined, (error) => {
+  if (error.response?.data?.code === 'PASSWORD_CHANGE_REQUIRED') {
+    window.dispatchEvent(new Event('auth:password-change-required'));
+  }
+  return Promise.reject(error);
+});

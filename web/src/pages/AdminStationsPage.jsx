@@ -15,13 +15,18 @@ import {
 import AddIcon from '@mui/icons-material/Add';
 import SearchIcon from '@mui/icons-material/Search';
 import { api } from '../api/client.js';
+import { useAuth } from '../context/AuthContext.jsx';
 import { StationsTable } from '../components/StationsTable.jsx';
 import { StationFormDialog } from '../components/StationFormDialog.jsx';
+import { ChargePointWizardDialog } from '../components/ChargePointWizardDialog.jsx';
 
 const POLL_MS = 8000;
 
 export function AdminStationsPage() {
+  const { can } = useAuth();
+  const canManage = can('stations.manage');
   const [stations, setStations] = useState([]);
+  const [wizardOpen, setWizardOpen] = useState(false);
   const [formTarget, setFormTarget] = useState(undefined); // undefined = closed, null = create, station = edit
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [search, setSearch] = useState('');
@@ -57,9 +62,11 @@ export function AdminStationsPage() {
         <Typography variant="h5" fontWeight={600}>
           Charge points
         </Typography>
-        <Button variant="contained" startIcon={<AddIcon />} onClick={() => setFormTarget(null)}>
-          Add charge point
-        </Button>
+        {canManage && (
+          <Button variant="contained" startIcon={<AddIcon />} onClick={() => setWizardOpen(true)}>
+            Add charge point
+          </Button>
+        )}
       </Stack>
 
       <TextField
@@ -81,8 +88,27 @@ export function AdminStationsPage() {
       />
 
       <Paper variant="outlined">
-        <StationsTable stations={filteredStations} onEdit={setFormTarget} onDelete={setDeleteTarget} />
+        <StationsTable
+          stations={filteredStations}
+          onEdit={setFormTarget}
+          onDelete={setDeleteTarget}
+          readOnly={!canManage}
+        />
       </Paper>
+
+      {wizardOpen && (
+        <ChargePointWizardDialog
+          onClose={() => {
+            setWizardOpen(false);
+            refresh();
+          }}
+          onCreated={refresh}
+          onSwitchToForm={() => {
+            setWizardOpen(false);
+            setFormTarget(null);
+          }}
+        />
+      )}
 
       {formTarget !== undefined && (
         <StationFormDialog

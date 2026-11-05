@@ -1,7 +1,7 @@
-import { Routes, Route } from 'react-router-dom';
+import { Routes, Route, Navigate } from 'react-router-dom';
 import { Box } from '@mui/material';
 import { NavBar } from './components/NavBar.jsx';
-import { ProtectedRoute } from './components/ProtectedRoute.jsx';
+import { ProtectedRoute, PermissionRoute } from './components/ProtectedRoute.jsx';
 import { AdminLayout } from './components/AdminLayout.jsx';
 import { PublicWaitlistPage } from './pages/PublicWaitlistPage.jsx';
 import { LoginPage } from './pages/LoginPage.jsx';
@@ -10,9 +10,20 @@ import { AccountPage } from './pages/AccountPage.jsx';
 import { AdminStationsPage } from './pages/AdminStationsPage.jsx';
 import { AdminZonesPage } from './pages/AdminZonesPage.jsx';
 import { AdminSettingsPage } from './pages/AdminSettingsPage.jsx';
-import { AdminReportsPage } from './pages/AdminReportsPage.jsx';
+import { AdminComplaintsPage } from './pages/AdminComplaintsPage.jsx';
+import { ReportsPage } from './pages/ReportsPage.jsx';
+import { IdleReportPage } from './pages/IdleReportPage.jsx';
+import { ComplaintsSummaryPage } from './pages/ComplaintsSummaryPage.jsx';
+import { HelpPage } from './help/HelpPage.jsx';
 import { AdminUsersPage } from './pages/AdminUsersPage.jsx';
 import { AdminSsoPage } from './pages/AdminSsoPage.jsx';
+import { ChangePassphrasePage } from './pages/ChangePassphrasePage.jsx';
+import { SetupWizardPage } from './pages/SetupWizardPage.jsx';
+import { SetupGate } from './components/SetupGate.jsx';
+import { AdminPaymentsPage } from './pages/AdminPaymentsPage.jsx';
+import { AdminIntegrationsPage } from './pages/AdminIntegrationsPage.jsx';
+import { AdminSystemPage } from './pages/AdminSystemPage.jsx';
+import { PayPage } from './pages/PayPage.jsx';
 
 export default function App() {
   return (
@@ -22,6 +33,23 @@ export default function App() {
         <Route path="/" element={<PublicWaitlistPage />} />
         <Route path="/login" element={<LoginPage />} />
         <Route path="/sso/callback" element={<SsoCallbackPage />} />
+        <Route path="/pay/:token" element={<PayPage />} />
+        <Route
+          path="/change-password"
+          element={
+            <ProtectedRoute allowPasswordChange>
+              <ChangePassphrasePage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/setup"
+          element={
+            <ProtectedRoute>
+              <SetupWizardPage />
+            </ProtectedRoute>
+          }
+        />
         <Route
           path="/account"
           element={
@@ -31,19 +59,95 @@ export default function App() {
           }
         />
         <Route
+          path="/reports"
+          element={
+            <ProtectedRoute>
+              <ReportsPage />
+            </ProtectedRoute>
+          }
+        >
+          <Route index element={<Navigate to="idle" replace />} />
+          <Route path="idle" element={<IdleReportPage />} />
+          <Route path="complaints" element={<ComplaintsSummaryPage />} />
+        </Route>
+        <Route
+          path="/help"
+          element={
+            <ProtectedRoute>
+              <HelpPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/help/:articleId"
+          element={
+            <ProtectedRoute>
+              <HelpPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
           path="/admin"
           element={
             <ProtectedRoute>
-              <AdminLayout />
+              <SetupGate>
+                <AdminLayout />
+              </SetupGate>
             </ProtectedRoute>
           }
         >
           <Route index element={<AdminStationsPage />} />
           <Route path="zones" element={<AdminZonesPage />} />
-          <Route path="reports" element={<AdminReportsPage />} />
-          <Route path="branding" element={<AdminSettingsPage />} />
-          <Route path="users" element={<AdminUsersPage />} />
-          <Route path="sso" element={<AdminSsoPage />} />
+          <Route path="complaints" element={<AdminComplaintsPage />} />
+          <Route path="reports" element={<Navigate to="/reports/idle" replace />} />
+          <Route
+            path="payments"
+            element={
+              <PermissionRoute permission="payments.view">
+                <AdminPaymentsPage />
+              </PermissionRoute>
+            }
+          />
+          <Route
+            path="branding"
+            element={
+              <PermissionRoute permission="branding.manage">
+                <AdminSettingsPage />
+              </PermissionRoute>
+            }
+          />
+          <Route
+            path="users"
+            element={
+              <PermissionRoute permission="users.manage">
+                <AdminUsersPage />
+              </PermissionRoute>
+            }
+          />
+          <Route
+            path="sso"
+            element={
+              <PermissionRoute permission="sso.manage">
+                <AdminSsoPage />
+              </PermissionRoute>
+            }
+          />
+          <Route
+            path="integrations"
+            element={
+              <PermissionRoute permission="integrations.manage">
+                <AdminIntegrationsPage />
+              </PermissionRoute>
+            }
+          />
+          <Route
+            path="system"
+            element={
+              <PermissionRoute permission="system.manage">
+                <AdminSystemPage />
+              </PermissionRoute>
+            }
+          />
         </Route>
       </Routes>
     </Box>

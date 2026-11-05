@@ -14,7 +14,7 @@ import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
 import { ocppStatusLabel, ocppStatusDescription } from '../ocppStatus.js';
 
-export function StationsTable({ stations, onEdit, onDelete }) {
+export function StationsTable({ stations, onEdit, onDelete, readOnly = false }) {
   return (
     <Table>
       <TableHead>
@@ -25,7 +25,7 @@ export function StationsTable({ stations, onEdit, onDelete }) {
           <TableCell>Zone</TableCell>
           <TableCell>Status</TableCell>
           <TableCell>Connectors</TableCell>
-          <TableCell align="right">Actions</TableCell>
+          {!readOnly && <TableCell align="right">Actions</TableCell>}
         </TableRow>
       </TableHead>
       <TableBody>
@@ -59,14 +59,16 @@ export function StationsTable({ stations, onEdit, onDelete }) {
                 ))}
               </Stack>
             </TableCell>
-            <TableCell align="right">
-              <IconButton size="small" onClick={() => onEdit(station)} aria-label="Edit">
-                <EditIcon fontSize="small" />
-              </IconButton>
-              <IconButton size="small" onClick={() => onDelete(station)} aria-label="Delete" color="error">
-                <DeleteIcon fontSize="small" />
-              </IconButton>
-            </TableCell>
+            {!readOnly && (
+              <TableCell align="right">
+                <IconButton size="small" onClick={() => onEdit(station)} aria-label="Edit">
+                  <EditIcon fontSize="small" />
+                </IconButton>
+                <IconButton size="small" onClick={() => onDelete(station)} aria-label="Delete" color="error">
+                  <DeleteIcon fontSize="small" />
+                </IconButton>
+              </TableCell>
+            )}
           </TableRow>
         ))}
       </TableBody>

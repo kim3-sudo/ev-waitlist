@@ -1,13 +1,30 @@
-import 'dotenv/config';
+import './loadRootEnv.js';
 
+// Bootstrap settings only: what the server needs before it can reach the
+// database. Everything else (public URLs, reservation window, payment provider
+// keys) lives in the ConfigValue table, edited in the admin UI, and is loaded
+// into this object by services/runtimeConfig.js.
+//
+// The defaults below are used until the database is loaded, and by tests.
 export const config = {
   port: Number(process.env.PORT ?? 4000),
   jwtSecret: process.env.JWT_SECRET ?? 'dev-secret-change-me',
-  corsOrigin: process.env.CORS_ORIGIN ?? 'http://localhost:5173',
-  // Externally-reachable base URL of this server, used to build the SAML
-  // SP's entity ID and ACS URL.
-  publicUrl: process.env.PUBLIC_URL ?? 'http://localhost:4000',
-  reservationWindowMinutes: Number(process.env.RESERVATION_WINDOW_MINUTES ?? 15),
-  seedAdminEmail: process.env.SEED_ADMIN_EMAIL ?? 'admin@example.com',
-  seedAdminPassword: process.env.SEED_ADMIN_PASSWORD ?? 'ChangeMe123!',
+  // Encrypts secret values stored in the database. Must stay the same across
+  // restarts: changing it makes saved secrets unreadable (re-enter them after).
+  encryptionKey: process.env.CONFIG_ENCRYPTION_KEY ?? '',
+
+  publicUrl: 'http://localhost:4000',
+  corsOrigin: 'http://localhost:5173',
+  webUrl: 'http://localhost:5173',
+  reservationWindowMinutes: 15,
+
+  stripe: { secretKey: '', webhookSecret: '' },
+  braintree: { environment: 'sandbox', merchantId: '', publicKey: '', privateKey: '' },
+  square: {
+    environment: 'sandbox',
+    accessToken: '',
+    locationId: '',
+    webhookSignatureKey: '',
+    webhookUrl: '',
+  },
 };

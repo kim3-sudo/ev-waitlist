@@ -7,7 +7,7 @@ adminSamlRouter.get('/', async (req, res) => {
   const samlConfig = await getSamlConfig();
   res.json({
     ...samlConfig,
-    sp: { entityId: spEntityId, acsUrl: spCallbackUrl, metadataUrl: spEntityId },
+    sp: { entityId: spEntityId(), acsUrl: spCallbackUrl(), metadataUrl: spEntityId() },
   });
 });
 

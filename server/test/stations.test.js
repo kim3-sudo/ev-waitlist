@@ -122,7 +122,7 @@ describe('public /api/stations + waitlist', () => {
     assert.equal(res.status, 409);
   });
 
-  it('records and lets an admin resolve a line-cutter report', async () => {
+  it('records and lets an admin resolve a line-cutting complaint', async () => {
     const station = await createStation();
     const join = await request(app)
       .post(`/api/stations/${station.id}/waitlist`)
@@ -133,13 +133,14 @@ describe('public /api/stations + waitlist', () => {
       .send({ note: 'Someone else plugged in' });
     assert.equal(report.status, 201);
 
-    const list = await authed(request(app).get('/api/admin/reports'));
+    const list = await authed(request(app).get('/api/admin/complaints'));
     assert.equal(list.status, 200);
     assert.equal(list.body.length, 1);
     assert.equal(list.body[0].note, 'Someone else plugged in');
 
-    const resolve = await authed(request(app).patch(`/api/admin/reports/${report.body.id}`)).send({ status: 'RESOLVED' });
+    const resolve = await authed(request(app).patch(`/api/admin/complaints/${report.body.id}`)).send({ status: 'RESOLVED' });
     assert.equal(resolve.status, 200);
     assert.equal(resolve.body.status, 'RESOLVED');
+    assert.notEqual(resolve.body.resolvedAt, null);
   });
 });

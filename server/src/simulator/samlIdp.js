@@ -21,7 +21,10 @@ import path from 'node:path';
 import { randomBytes } from 'node:crypto';
 import express from 'express';
 import { SignedXml } from 'xml-crypto';
-import { spEntityId, spCallbackUrl } from '../services/samlService.js';
+// Standalone dev tool: it doesn't load the database, so it takes the public URL from the environment.
+const publicUrl = (process.env.PUBLIC_URL ?? 'http://localhost:4000').replace(/\/$/, '');
+const spEntityId = `${publicUrl}/api/auth/saml/metadata`;
+const spCallbackUrl = `${publicUrl}/api/auth/saml/acs`;
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 

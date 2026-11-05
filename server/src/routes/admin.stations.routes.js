@@ -41,6 +41,18 @@ async function syncConnectorCount(stationId, count) {
   await prisma.connector.deleteMany({ where: { stationId, connectorId: { gt: count } } });
 }
 
+// The identity is part of the websocket URL (ws://host/ocpp/<identity>), so it
+// is limited to characters that are safe in a URL path segment.
+const IDENTITY_PATTERN = /^[A-Za-z0-9._:-]{1,64}$/;
+
+export function identityError(identity) {
+  if (typeof identity !== 'string' || !identity.trim()) return 'The OCPP identity is required';
+  if (!IDENTITY_PATTERN.test(identity)) {
+    return 'Use 1-64 letters, digits, or the characters . _ : - (no spaces or slashes)';
+  }
+  return null;
+}
+
 async function resolveZoneId(zoneId) {
   if (!zoneId) return { zoneId: null };
   const zone = await prisma.zone.findUnique({ where: { id: zoneId } });
@@ -54,6 +66,18 @@ adminStationsRouter.get('/', async (req, res) => {
     orderBy: { name: 'asc' },
   });
   res.json(stations.map(serialize));
+});
+
+// Used by the add-charge-point wizard to check an identity before creating the station.
+adminStationsRouter.get('/identity-check', async (req, res) => {
+  const identity = typeof req.query.identity === 'string' ? req.query.identity.trim() : '';
+  const error = identityError(identity);
+  if (error) return res.json({ available: false, error });
+  const existing = await prisma.station.findUnique({ where: { identity } });
+  if (existing) {
+    return res.json({ available: false, error: `A charge point with identity "${identity}" already exists` });
+  }
+  res.json({ available: true, error: null });
 });
 
 adminStationsRouter.get('/:id', async (req, res) => {
@@ -70,6 +94,8 @@ adminStationsRouter.post('/', async (req, res) => {
   if (!identity || !name) {
     return res.status(400).json({ error: 'identity and name are required' });
   }
+  const problem = identityError(identity);
+  if (problem) return res.status(400).json({ error: problem });
 
   const existing = await prisma.station.findUnique({ where: { identity } });
   if (existing) {
@@ -99,6 +125,8 @@ adminStationsRouter.put('/:id', async (req, res) => {
   if (!station) return res.status(404).json({ error: 'Station not found' });
 
   if (identity && identity !== station.identity) {
+    const problem = identityError(identity);
+    if (problem) return res.status(400).json({ error: problem });
     const clash = await prisma.station.findUnique({ where: { identity } });
     if (clash) {
       return res.status(409).json({ error: `A station with identity "${identity}" already exists` });

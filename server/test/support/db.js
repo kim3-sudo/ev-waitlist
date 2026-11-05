@@ -4,7 +4,9 @@ import { prisma } from '../../src/db.js';
 // regardless of whether SQLite FK cascades are active.
 export async function resetDb() {
   await prisma.$transaction([
-    prisma.lineCutterReport.deleteMany(),
+    prisma.charge.deleteMany(),
+    prisma.idleEvent.deleteMany(),
+    prisma.lineCuttingComplaint.deleteMany(),
     prisma.reservation.deleteMany(),
     prisma.transaction.deleteMany(),
     prisma.queueEntry.deleteMany(),
@@ -14,5 +16,8 @@ export async function resetDb() {
     prisma.admin.deleteMany(),
     prisma.settings.deleteMany(),
     prisma.samlConfig.deleteMany(),
+    prisma.customRole.deleteMany(),
+    prisma.paymentSettings.deleteMany(),
+    prisma.configValue.deleteMany(),
   ]);
 }

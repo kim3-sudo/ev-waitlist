@@ -1,8 +1,19 @@
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
 
-export function ProtectedRoute({ children }) {
-  const { isAuthenticated } = useAuth();
+// Requires a signed-in admin. Anyone still on a first-run passphrase is sent
+// to the change-passphrase screen, unless this route is that screen.
+export function ProtectedRoute({ children, allowPasswordChange = false }) {
+  const { isAuthenticated, mustChangePassword } = useAuth();
   if (!isAuthenticated) return <Navigate to="/login" replace />;
+  if (mustChangePassword && !allowPasswordChange) return <Navigate to="/change-password" replace />;
+  return children;
+}
+
+// Shows the page only to roles holding `permission`. Others go back to the charge points tab.
+export function PermissionRoute({ permission, children }) {
+  const { role, can } = useAuth();
+  if (role === null) return null; // role still loading
+  if (!can(permission)) return <Navigate to="/admin" replace />;
   return children;
 }

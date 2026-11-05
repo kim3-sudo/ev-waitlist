@@ -170,13 +170,13 @@ export function WaitlistStatusCard({ entryId, onLeave }) {
             Leave waitlist
           </Button>
           <Button size="small" color="inherit" onClick={() => setReportOpen(true)}>
-            Report a line-cutter
+            File a line-cutting complaint
           </Button>
         </CardActions>
       )}
 
       <Dialog open={reportOpen} onClose={() => setReportOpen(false)} fullWidth maxWidth="xs">
-        <DialogTitle>Report a line-cutter</DialogTitle>
+        <DialogTitle>File a line-cutting complaint</DialogTitle>
         <DialogContent>
           <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
             Let an admin know someone appears to have taken your spot at {data.stationName}.

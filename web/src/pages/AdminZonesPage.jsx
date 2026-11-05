@@ -23,6 +23,7 @@ import AddIcon from '@mui/icons-material/Add';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
 import { api } from '../api/client.js';
+import { useAuth } from '../context/AuthContext.jsx';
 
 function ZoneFormDialog({ zone, onClose, onSaved }) {
   const isEdit = Boolean(zone);
@@ -78,6 +79,8 @@ function ZoneFormDialog({ zone, onClose, onSaved }) {
 }
 
 export function AdminZonesPage() {
+  const { can } = useAuth();
+  const canManage = can('zones.manage');
   const [zones, setZones] = useState([]);
   const [formTarget, setFormTarget] = useState(undefined); // undefined = closed, null = create, zone = edit
   const [deleteTarget, setDeleteTarget] = useState(null);
@@ -110,9 +113,11 @@ export function AdminZonesPage() {
         <Typography variant="h5" fontWeight={600}>
           Zones
         </Typography>
-        <Button variant="contained" startIcon={<AddIcon />} onClick={() => setFormTarget(null)}>
-          Add zone
-        </Button>
+        {canManage && (
+          <Button variant="contained" startIcon={<AddIcon />} onClick={() => setFormTarget(null)}>
+            Add zone
+          </Button>
+        )}
       </Stack>
       <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
         Group charge points that share one waitlist -- whichever charger in a zone frees up first is offered to the
@@ -132,7 +137,7 @@ export function AdminZonesPage() {
               <TableCell>Name</TableCell>
               <TableCell>Charge points</TableCell>
               <TableCell>Waiting</TableCell>
-              <TableCell align="right">Actions</TableCell>
+              {canManage && <TableCell align="right">Actions</TableCell>}
             </TableRow>
           </TableHead>
           <TableBody>
@@ -153,24 +158,26 @@ export function AdminZonesPage() {
                   )}
                 </TableCell>
                 <TableCell>{zone.waitingCount}</TableCell>
-                <TableCell align="right">
-                  <IconButton size="small" onClick={() => setFormTarget(zone)} aria-label="Rename">
-                    <EditIcon fontSize="small" />
-                  </IconButton>
-                  <IconButton
-                    size="small"
-                    color="error"
-                    onClick={() => setDeleteTarget(zone)}
-                    aria-label="Delete"
-                  >
-                    <DeleteIcon fontSize="small" />
-                  </IconButton>
-                </TableCell>
+                {canManage && (
+                  <TableCell align="right">
+                    <IconButton size="small" onClick={() => setFormTarget(zone)} aria-label="Rename">
+                      <EditIcon fontSize="small" />
+                    </IconButton>
+                    <IconButton
+                      size="small"
+                      color="error"
+                      onClick={() => setDeleteTarget(zone)}
+                      aria-label="Delete"
+                    >
+                      <DeleteIcon fontSize="small" />
+                    </IconButton>
+                  </TableCell>
+                )}
               </TableRow>
             ))}
             {zones.length === 0 && (
               <TableRow>
-                <TableCell colSpan={4}>
+                <TableCell colSpan={canManage ? 4 : 3}>
                   <Typography variant="body2" color="text.secondary" sx={{ py: 2 }}>
                     No zones yet.
                   </Typography>

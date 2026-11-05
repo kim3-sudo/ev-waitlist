@@ -14,6 +14,12 @@ model Admin {
   passwordHash String?
   mfaSecret    String?
   mfaEnabled   Boolean  @default(false)
+  // Set on the auto-generated first-run admin. Blocks all admin API access
+  // until the password is changed.
+  mustChangePassword Boolean @default(false)
+  // Role name: a built-in role (ADMIN, VIEWER -- see auth/permissions.js) or
+  // the name of a CustomRole. Permissions are resolved from it on each request.
+  role         String   @default("ADMIN")
   createdAt    DateTime @default(now())
 }
 
@@ -32,6 +38,9 @@ model Settings {
   // When true, admin accounts without MFA enabled are forced to enroll
   // (TOTP) the next time they log in.
   mfaRequired    Boolean  @default(false)
+  // False until the first-run setup wizard (first charge point + branding)
+  // is completed or skipped.
+  setupCompleted Boolean  @default(false)
   updatedAt      DateTime @updatedAt
 }
 
@@ -81,7 +90,9 @@ model Station {
   queueEntries      QueueEntry[]
   reservations      Reservation[]
   transactions      Transaction[]
-  lineCutterReports LineCutterReport[]
+  lineCuttingComplaints LineCuttingComplaint[]
+  idleEvents        IdleEvent[]
+  charges           Charge[]
 }
 
 model Connector {
@@ -123,7 +134,7 @@ model QueueEntry {
   createdAt     DateTime @default(now())
 
   reservation       Reservation?
-  lineCutterReports LineCutterReport[]
+  lineCuttingComplaints LineCuttingComplaint[]
 }
 
 // A hold placed on a specific connector for a specific queue entry, mirrored
@@ -144,10 +155,11 @@ model Reservation {
   createdAt         DateTime  @default(now())
 }
 
-// A driver-submitted report that someone else took their spot at a station
+// A driver's complaint that someone else took their spot at a station
 // (e.g. plugged in without having been notified/reserved). Surfaced to
-// admins to review and act on manually.
-model LineCutterReport {
+// admins to review and act on manually. Table name is kept from the older
+// "LineCutterReport" model.
+model LineCuttingComplaint {
   id           String     @id @default(cuid())
   station      Station    @relation(fields: [stationId], references: [id], onDelete: Cascade)
   stationId    String
@@ -157,6 +169,10 @@ model LineCutterReport {
   // OPEN -> RESOLVED / DISMISSED
   status       String     @default("OPEN")
   createdAt    DateTime   @default(now())
+  // Set when the complaint leaves OPEN; cleared if it is reopened.
+  resolvedAt   DateTime?
+
+  @@map("LineCutterReport")
 }
 
 model Transaction {
@@ -170,4 +186,89 @@ model Transaction {
   meterStop         Int?
   startedAt         DateTime  @default(now())
   stoppedAt         DateTime?
+  charge            Charge?
+}
+
+// A stretch of time a connector sat occupied after the session was over
+// (status Finishing, or SuspendedEV with no open transaction) -- i.e. a car
+// still plugged in once charging has finished. endedAt is null while ongoing.
+model IdleEvent {
+  id          String    @id @default(cuid())
+  station     Station   @relation(fields: [stationId], references: [id], onDelete: Cascade)
+  stationId   String
+  connectorId Int
+  startedAt   DateTime  @default(now())
+  endedAt     DateTime?
+
+  @@index([stationId, connectorId, endedAt])
+}
+
+// A named set of permissions an admin can assign to users (e.g. "Electrician").
+// The built-in ADMIN and VIEWER roles are defined in code, not stored here.
+model CustomRole {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?
+  // JSON array of permission keys from auth/permissions.js.
+  permissions String   @default("[]")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// Singleton (id "singleton"): how drivers are charged and who collects payment.
+model PaymentSettings {
+  id                          String    @id
+  // TIME (per minute, optional peak rate) | ENERGY (per kWh dispensed)
+  pricingModel                String    @default("TIME")
+  // ISO 4217 code, e.g. USD
+  currency                    String    @default("USD")
+  ratePerMinuteCents          Int       @default(0)
+  // Demand pricing: charged instead of ratePerMinuteCents between peakStartHour
+  // (inclusive) and peakEndHour (exclusive), in server local time (0-23).
+  peakRatePerMinuteCents      Int?
+  peakStartHour               Int?
+  peakEndHour                 Int?
+  ratePerKwhCents             Int       @default(0)
+  // Set when an admin confirms they checked local rules on reselling power.
+  energyPricingAcknowledgedAt DateTime?
+  // NONE | STRIPE | BRAINTREE
+  provider                    String    @default("NONE")
+  updatedAt                   DateTime  @updatedAt
+}
+
+// The amount owed for one finished charging transaction.
+model Charge {
+  id              String      @id @default(cuid())
+  // Unguessable token in the public payment link (/pay/<token>).
+  token           String      @unique
+  station         Station     @relation(fields: [stationId], references: [id], onDelete: Cascade)
+  stationId       String
+  transaction     Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  transactionId   String      @unique
+  idTag           String
+  payerName       String?
+  payerContact    String?
+  pricingModel    String
+  currency        String
+  amountCents     Int
+  durationSeconds Int
+  energyWh        Int?
+  // PENDING -> PAID. NEEDS_REVIEW: no meter reading to bill from.
+  // NO_CHARGE: amount came to zero.
+  status          String      @default("PENDING")
+  // Provider used for the most recent payment attempt, and its reference
+  // (Stripe Checkout Session ID or Braintree transaction ID).
+  provider        String?
+  providerRef     String?
+  paidAt          DateTime?
+  createdAt       DateTime    @default(now())
+}
+
+// Runtime settings edited in the admin UI (public URLs, reservation window,
+// payment provider keys). One row per key. Secret values are stored encrypted
+// (see utils/secretBox.js), never in plain text.
+model ConfigValue {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
 }

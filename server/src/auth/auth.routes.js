@@ -6,7 +6,8 @@ import QRCode from 'qrcode';
 import { prisma } from '../db.js';
 import { config } from '../config.js';
 import { getSettings } from '../services/settingsService.js';
-import { requireAdmin } from './auth.middleware.js';
+import { resolvePermissions } from '../services/roleService.js';
+import { requireAdmin, requireAdminAllowingPasswordChange } from './auth.middleware.js';
 
 export const authRouter = Router();
 
@@ -14,6 +15,18 @@ const MFA_TOKEN_TTL = '5m';
 
 function issueSessionToken(admin) {
   return jwt.sign({ sub: admin.id, email: admin.email }, config.jwtSecret, { expiresIn: '12h' });
+}
+
+// Body returned whenever a full session is granted. The client uses
+// mustChangePassword to send the admin to the forced passphrase change.
+async function sessionBody(admin) {
+  return {
+    token: issueSessionToken(admin),
+    email: admin.email,
+    role: admin.role,
+    permissions: await resolvePermissions(admin.role),
+    mustChangePassword: admin.mustChangePassword,
+  };
 }
 
 function issuePreAuthToken(admin) {
@@ -72,7 +85,7 @@ authRouter.post('/login', async (req, res) => {
     return res.json({ mfaSetupRequired: true, preAuthToken: issuePreAuthToken(admin) });
   }
 
-  res.json({ token: issueSessionToken(admin), email: admin.email });
+  res.json(await sessionBody(admin));
 });
 
 authRouter.post('/mfa/verify', async (req, res) => {
@@ -94,7 +107,7 @@ authRouter.post('/mfa/verify', async (req, res) => {
     return res.status(401).json({ error: 'Invalid code' });
   }
 
-  res.json({ token: issueSessionToken(admin), email: admin.email });
+  res.json(await sessionBody(admin));
 });
 
 authRouter.post('/mfa/setup/start', async (req, res) => {
@@ -124,7 +137,7 @@ authRouter.post('/mfa/setup/confirm', async (req, res) => {
 
   // Forced first-login enrollment: complete the login in the same step.
   if (resolved.preAuth) {
-    return res.json({ token: issueSessionToken(admin), email: admin.email });
+    return res.json(await sessionBody(admin));
   }
   res.json({ ok: true });
 });
@@ -143,13 +156,16 @@ authRouter.post('/mfa/disable', requireAdmin, async (req, res) => {
   res.json({ ok: true });
 });
 
-authRouter.put('/password', requireAdmin, async (req, res) => {
+authRouter.put('/password', requireAdminAllowingPasswordChange, async (req, res) => {
   const { currentPassword, newPassword } = req.body ?? {};
   if (!currentPassword || !newPassword) {
     return res.status(400).json({ error: 'currentPassword and newPassword are required' });
   }
   if (newPassword.length < 8) {
     return res.status(400).json({ error: 'newPassword must be at least 8 characters' });
+  }
+  if (newPassword === currentPassword) {
+    return res.status(400).json({ error: 'newPassword must be different from the current password' });
   }
 
   const admin = await prisma.admin.findUnique({ where: { id: req.admin.sub } });
@@ -161,12 +177,22 @@ authRouter.put('/password', requireAdmin, async (req, res) => {
   }
 
   const passwordHash = await bcrypt.hash(newPassword, 10);
-  await prisma.admin.update({ where: { id: admin.id }, data: { passwordHash } });
+  await prisma.admin.update({
+    where: { id: admin.id },
+    data: { passwordHash, mustChangePassword: false },
+  });
   res.json({ ok: true });
 });
 
-authRouter.get('/me', requireAdmin, async (req, res) => {
+authRouter.get('/me', requireAdminAllowingPasswordChange, async (req, res) => {
   const admin = await prisma.admin.findUnique({ where: { id: req.admin.sub } });
   if (!admin) return res.status(404).json({ error: 'Not found' });
-  res.json({ email: admin.email, mfaEnabled: admin.mfaEnabled, hasPassword: Boolean(admin.passwordHash) });
+  res.json({
+    email: admin.email,
+    role: admin.role,
+    permissions: req.admin.permissions,
+    mfaEnabled: admin.mfaEnabled,
+    hasPassword: Boolean(admin.passwordHash),
+    mustChangePassword: admin.mustChangePassword,
+  });
 });

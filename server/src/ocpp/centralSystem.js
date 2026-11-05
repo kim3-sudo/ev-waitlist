@@ -3,6 +3,8 @@ import { prisma } from '../db.js';
 import { registry } from '../services/stationRegistry.js';
 import { onConnectorFreed, onChargeComplete, handleStartTransaction } from '../services/dispatcher.js';
 import { isIdTagAuthorizedAt } from '../services/queueService.js';
+import { reconcileIdle } from '../services/idleTracker.js';
+import { createChargeForTransaction } from '../services/payments/chargeService.js';
 
 // Statuses meaning "session over, vehicle still occupying the connector".
 const IDLE_OCCUPIED_STATUSES = new Set(['SuspendedEV', 'Finishing']);
@@ -56,6 +58,12 @@ export function createCentralSystem() {
         create: { stationId, connectorId, status, errorCode },
       });
 
+      if (connectorId > 0) {
+        await reconcileIdle(stationId, connectorId).catch((err) =>
+          console.error(`Idle tracking failed for ${identity}/${connectorId}:`, err),
+        );
+      }
+
       if (connectorId > 0 && status !== previous?.status) {
         if (status === 'Available') {
           onConnectorFreed(stationId, connectorId).catch((err) =>
@@ -101,6 +109,10 @@ export function createCentralSystem() {
         },
       });
 
+      await reconcileIdle(stationId, params.connectorId).catch((err) =>
+        console.error(`Idle tracking failed for ${identity}/${params.connectorId}:`, err),
+      );
+
       await handleStartTransaction(stationId, params.connectorId, params.idTag);
 
       return {
@@ -110,10 +122,21 @@ export function createCentralSystem() {
     });
 
     client.handle('StopTransaction', async ({ params }) => {
+      const tx = await prisma.transaction.findFirst({
+        where: { stationId, ocppTransactionId: params.transactionId },
+      });
       await prisma.transaction.updateMany({
         where: { stationId, ocppTransactionId: params.transactionId },
         data: { stoppedAt: new Date(), meterStop: params.meterStop },
       });
+      if (tx) {
+        await reconcileIdle(stationId, tx.connectorId).catch((err) =>
+          console.error(`Idle tracking failed for ${identity}/${tx.connectorId}:`, err),
+        );
+      }
+      await createChargeForTransaction(stationId, params.transactionId).catch((err) =>
+        console.error(`Billing failed for ${identity}/${params.transactionId}:`, err),
+      );
 
       return { idTagInfo: { status: 'Accepted' } };
     });

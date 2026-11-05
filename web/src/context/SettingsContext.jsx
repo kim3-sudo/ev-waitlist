@@ -8,6 +8,9 @@ const DEFAULT_SETTINGS = {
   secondaryColor: '#1565c0',
   fontFamily: null,
   identifierMode: 'LICENSE_PLATE',
+  // Assume set up until the server says otherwise, so a failed settings load
+  // doesn't trap the admin in the wizard.
+  setupCompleted: true,
 };
 
 const SettingsContext = createContext(null);

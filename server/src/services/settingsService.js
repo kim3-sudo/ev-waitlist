@@ -11,7 +11,8 @@ export async function getSettings() {
 }
 
 export async function updateSettings(data) {
-  const { companyName, logoUrl, primaryColor, secondaryColor, fontFamily, identifierMode, mfaRequired } = data;
+  const { companyName, logoUrl, primaryColor, secondaryColor, fontFamily, identifierMode, mfaRequired, setupCompleted } =
+    data;
 
   if (identifierMode && !IDENTIFIER_MODES.includes(identifierMode)) {
     throw new Error(`identifierMode must be one of ${IDENTIFIER_MODES.join(', ')}`);
@@ -19,8 +20,27 @@ export async function updateSettings(data) {
 
   return prisma.settings.upsert({
     where: { id: SETTINGS_ID },
-    create: { id: SETTINGS_ID, companyName, logoUrl, primaryColor, secondaryColor, fontFamily, identifierMode, mfaRequired },
-    update: { companyName, logoUrl, primaryColor, secondaryColor, fontFamily, identifierMode, mfaRequired },
+    create: {
+      id: SETTINGS_ID,
+      companyName,
+      logoUrl,
+      primaryColor,
+      secondaryColor,
+      fontFamily,
+      identifierMode,
+      mfaRequired,
+      setupCompleted,
+    },
+    update: {
+      companyName,
+      logoUrl,
+      primaryColor,
+      secondaryColor,
+      fontFamily,
+      identifierMode,
+      mfaRequired,
+      setupCompleted,
+    },
   });
 }
 

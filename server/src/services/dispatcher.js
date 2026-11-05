@@ -224,7 +224,7 @@ export async function reportLineCutter(entryId, note) {
     throw err;
   }
 
-  return prisma.lineCutterReport.create({
+  return prisma.lineCuttingComplaint.create({
     data: {
       stationId: entry.stationId,
       queueEntryId: entry.id,

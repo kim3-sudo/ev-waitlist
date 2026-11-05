@@ -1,20 +1,15 @@
-import 'dotenv/config';
-import bcrypt from 'bcryptjs';
+import '../src/loadRootEnv.js';
 import { PrismaClient } from '@prisma/client';
+import { ensureFirstRunAdmin, printFirstRunCredentials } from '../src/services/firstRunService.js';
 
 const prisma = new PrismaClient();
 
-const email = process.env.SEED_ADMIN_EMAIL ?? 'admin@example.com';
-const password = process.env.SEED_ADMIN_PASSWORD ?? 'ChangeMe123!';
-
-const passwordHash = await bcrypt.hash(password, 10);
-
-await prisma.admin.upsert({
-  where: { email },
-  update: { passwordHash },
-  create: { email, passwordHash },
-});
-
-console.log(`Seeded admin user: ${email}`);
+// Safe to run on every start: only acts when the database has no admin yet.
+const credentials = await ensureFirstRunAdmin();
+if (credentials) {
+  printFirstRunCredentials(credentials);
+} else {
+  console.log('Admin account already exists; skipping first-run setup.');
+}
 
 await prisma.$disconnect();

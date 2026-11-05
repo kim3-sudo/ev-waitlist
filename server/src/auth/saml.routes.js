@@ -52,7 +52,8 @@ samlRouter.post('/acs', express.urlencoded({ extended: false }), async (req, res
     if (!samlConfig.autoProvision) {
       return res.status(401).send(`No account found for ${email} and auto-provisioning is disabled`);
     }
-    admin = await prisma.admin.create({ data: { email, passwordHash: null } });
+    // Auto-provisioned accounts start as viewers; an admin can promote them.
+    admin = await prisma.admin.create({ data: { email, passwordHash: null, role: 'VIEWER' } });
   }
 
   const token = jwt.sign({ sub: admin.id, email: admin.email }, config.jwtSecret, { expiresIn: '12h' });

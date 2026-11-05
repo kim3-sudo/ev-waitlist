@@ -4,8 +4,9 @@ import { config } from '../config.js';
 
 const SAML_CONFIG_ID = 'singleton';
 
-export const spEntityId = `${config.publicUrl}/api/auth/saml/metadata`;
-export const spCallbackUrl = `${config.publicUrl}/api/auth/saml/acs`;
+// Functions, not constants: the public URL can change in the admin UI.
+export const spEntityId = () => `${config.publicUrl}/api/auth/saml/metadata`;
+export const spCallbackUrl = () => `${config.publicUrl}/api/auth/saml/acs`;
 
 export async function getSamlConfig() {
   const existing = await prisma.samlConfig.findUnique({ where: { id: SAML_CONFIG_ID } });
@@ -29,8 +30,8 @@ export async function buildSamlClient() {
   if (!samlConfig.enabled || !samlConfig.idpSsoUrl || !samlConfig.idpCertificate) return null;
 
   return new SAML({
-    issuer: spEntityId,
-    callbackUrl: spCallbackUrl,
+    issuer: spEntityId(),
+    callbackUrl: spCallbackUrl(),
     entryPoint: samlConfig.idpSsoUrl,
     idpCert: samlConfig.idpCertificate,
     // Accept either a signed assertion or a signed top-level response --
