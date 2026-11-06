@@ -1,6 +1,6 @@
 # Security policy
 
-EV Waitlist handles sign-in for administrators, payment provider keys, payment links, and drivers' personal details (names, contact details, plate and permit numbers).
+Plugyard handles sign-in for administrators, payment provider keys, payment links, and drivers' personal details (names, contact details, plate and permit numbers).
 
 ## Reporting a vulnerability
 
@@ -14,4 +14,4 @@ Only the latest release on the main branch receives fixes.
 
 ## Operators
 
-If you run EV Waitlist, see the [operator checklist](docs/operator-checklist.md) for the settings that matter for security: HTTPS, backups of the secrets file, multi-factor sign-in for administrators, and least-privilege roles.
+If you run Plugyard, see the [operator checklist](docs/operator-checklist.md) for the settings that matter for security: HTTPS, backups of the secrets file, multi-factor sign-in for administrators, and least-privilege roles.

@@ -18,7 +18,7 @@ describe('GET /api/settings (public)', () => {
   it('returns defaults with no auth required', async () => {
     const res = await request(app).get('/api/settings');
     assert.equal(res.status, 200);
-    assert.equal(res.body.companyName, 'EV Waitlist');
+    assert.equal(res.body.companyName, 'Plugyard');
     assert.equal(res.body.mfaRequired, false);
   });
 });

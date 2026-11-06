@@ -6,7 +6,7 @@
 // Database: SQLite by default (a local test.db file). To run the suite against
 // another provider, set DATABASE_PROVIDER=postgresql or mysql and
 // TEST_DATABASE_URL to a database the test run may wipe, for example:
-//   DATABASE_PROVIDER=postgresql TEST_DATABASE_URL=postgresql://user:pass@127.0.0.1:5432/ev_waitlist_test npm test
+//   DATABASE_PROVIDER=postgresql TEST_DATABASE_URL=postgresql://user:pass@127.0.0.1:5432/plugyard_test npm test
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import http from 'node:http';

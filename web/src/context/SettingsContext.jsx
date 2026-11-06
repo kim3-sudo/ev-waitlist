@@ -2,7 +2,7 @@ import { createContext, useContext, useEffect, useState, useCallback } from 'rea
 import { api } from '../api/client.js';
 
 const DEFAULT_SETTINGS = {
-  companyName: 'EV Waitlist',
+  companyName: 'Plugyard',
   logoUrl: null,
   primaryColor: '#0d7a5f',
   secondaryColor: '#1565c0',

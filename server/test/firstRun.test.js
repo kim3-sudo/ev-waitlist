@@ -17,7 +17,7 @@ async function login(email, password) {
 describe('first-run admin', () => {
   it('creates one random admin with a forced passphrase change on an empty database', async () => {
     const creds = await ensureFirstRunAdmin();
-    assert.match(creds.email, /^admin-[a-z0-9]{8}@ev-waitlist\.local$/);
+    assert.match(creds.email, /^admin-[a-z0-9]{8}@plugyard\.local$/);
     assert.equal(creds.password.split('-').length, 6);
 
     const admin = await prisma.admin.findUnique({ where: { email: creds.email } });

@@ -24,7 +24,7 @@ async function configureSaml({ autoProvision = false } = {}) {
     .set('Authorization', `Bearer ${token}`)
     .send({
       enabled: true,
-      idpEntityId: 'https://ev-waitlist-test-idp.local/metadata',
+      idpEntityId: 'https://plugyard-test-idp.local/metadata',
       idpSsoUrl: 'http://localhost:7000/sso',
       idpCertificate: idpCertPem,
       autoProvision,

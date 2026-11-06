@@ -1,4 +1,4 @@
-// Starts the EV Waitlist stack from the repo root.
+// Starts the Plugyard stack from the repo root.
 //
 //   npm start                   API server + web UI
 //   npm start -- --simulator    also start a charge point simulator
@@ -208,7 +208,7 @@ function printSummary() {
   const lines = [
     '',
     '============================================================',
-    '  EV Waitlist is running',
+    '  Plugyard is running',
     '',
     `  Web UI:   ${webUrl}`,
     `  API:      ${apiUrl}`,

@@ -1,6 +1,6 @@
 # Operator checklist
 
-Work through this before drivers use the site. Items marked **legal** need your own counsel. EV Waitlist does not provide legal advice.
+Work through this before drivers use the site. Items marked **legal** need your own counsel. Plugyard does not provide legal advice.
 
 ## 1. Legal review (legal)
 

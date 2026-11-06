@@ -1,6 +1,6 @@
-# EV Waitlist
+# Plugyard
 
-> **Legal notice.** EV Waitlist is open-source software provided as is. It does not provide legal advice. If you run charging sites, the features that touch the law are yours to review with your own counsel before you use them: roaming (OCPI) terms and the warning drivers see, payments, retention of drivers' personal data, and payer records. The defaults are starting points, not legal advice.
+> **Legal notice.** Plugyard is open-source software provided as is. It does not provide legal advice. If you run charging sites, the features that touch the law are yours to review with your own counsel before you use them: roaming (OCPI) terms and the warning drivers see, payments, retention of drivers' personal data, and payer records. The defaults are starting points, not legal advice.
 
 ## Documentation
 

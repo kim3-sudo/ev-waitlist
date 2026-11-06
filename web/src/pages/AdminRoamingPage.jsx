@@ -99,7 +99,7 @@ export function AdminRoamingPage() {
     <Container maxWidth="md" sx={{ py: 4 }}>
       <Alert severity="warning" sx={{ mb: 3 }}>
         Before you turn roaming on, have your own legal counsel review the roaming terms and the warning drivers see.
-        EV Waitlist does not provide legal advice, and the text below is a draft.
+        Plugyard does not provide legal advice, and the text below is a draft.
       </Alert>
 
       {message && (

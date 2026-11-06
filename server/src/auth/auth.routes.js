@@ -117,7 +117,7 @@ authRouter.post('/mfa/setup/start', tenantFromAdminToken, async (req, res) => {
   if (!resolved) return res.status(401).json({ error: 'Not authenticated' });
 
   const secret = authenticator.generateSecret();
-  const otpauth = authenticator.keyuri(resolved.admin.email, 'EV Waitlist', secret);
+  const otpauth = authenticator.keyuri(resolved.admin.email, 'Plugyard', secret);
   const qrCode = await QRCode.toDataURL(otpauth);
 
   res.json({ secret, qrCode });

@@ -90,7 +90,7 @@ model Admin {
 model Settings {
   tenant         Tenant   @relation(fields: [tenantId], references: [id])
   tenantId       String   @id
-  companyName    String   @default("EV Waitlist")
+  companyName    String   @default("Plugyard")
   logoUrl        String? // @longtext
   primaryColor   String   @default("#0d7a5f")
   secondaryColor String   @default("#1565c0")

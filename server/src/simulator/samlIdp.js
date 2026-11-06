@@ -30,7 +30,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export const idpCertPem = readFileSync(path.join(__dirname, 'fixtures/idp-cert.pem'), 'utf8');
 export const idpKeyPem = readFileSync(path.join(__dirname, 'fixtures/idp-key.pem'), 'utf8');
-export const idpEntityId = 'https://ev-waitlist-test-idp.local/metadata';
+export const idpEntityId = 'https://plugyard-test-idp.local/metadata';
 
 function xmlEscape(value) {
   return String(value).replace(/[<>&'"]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', "'": '&apos;', '"': '&quot;' })[c]);

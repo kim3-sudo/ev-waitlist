@@ -37,7 +37,7 @@ const WORDS = [
 ];
 
 const USERNAME_CHARS = 'abcdefghijklmnopqrstuvwxyz0123456789';
-const DOMAIN = 'ev-waitlist.local';
+const DOMAIN = 'plugyard.local';
 
 function randomFrom(list) {
   return list[randomInt(list.length)];
