@@ -1,16 +1,19 @@
 import { useEffect, useState } from 'react';
 import {
-  Accordion,
-  AccordionDetails,
-  AccordionSummary,
   Alert,
   Button,
   Checkbox,
   Chip,
+  CircularProgress,
   Container,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
   Divider,
   FormControl,
   FormControlLabel,
+  FormHelperText,
   FormLabel,
   MenuItem,
   Paper,
@@ -27,9 +30,9 @@ import {
   ToggleButtonGroup,
   Typography,
 } from '@mui/material';
-import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import { Link as RouterLink } from 'react-router-dom';
 import { api } from '../api/client.js';
+import { MeterReadingsSettings } from '../components/MeterReadingsSettings.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
 
 const PROVIDERS = [
@@ -120,6 +123,7 @@ function formFrom(data) {
   const s = data.settings;
   return {
     pricingModel: s.pricingModel,
+    timeBillingUnit: s.timeBillingUnit ?? 'MINUTE',
     currency: s.currency,
     ratePerMinute: toDollars(s.ratePerMinuteCents),
     ratePerKwh: toDollars(s.ratePerKwhCents),
@@ -135,6 +139,7 @@ function formFrom(data) {
 function payloadFrom(form, { acknowledged, highRateConfirmed }) {
   return {
     pricingModel: form.pricingModel,
+    timeBillingUnit: form.timeBillingUnit,
     currency: form.currency.toUpperCase(),
     ratePerMinuteCents: toCents(form.ratePerMinute) ?? 0,
     ratePerKwhCents: toCents(form.ratePerKwh) ?? 0,
@@ -183,7 +188,15 @@ function PriceCheck({ check, pricingModel, confirmed, onConfirm, canManage }) {
   );
 }
 
-function ScheduleEditor({ rows, onChange, currency, disabled }) {
+// Converts a rate typed in one time unit to the other (per minute to per hour is times 60).
+function convertRate(text, factor) {
+  if (text === '' || text == null) return text;
+  const n = Number.parseFloat(text);
+  return Number.isNaN(n) ? text : (n * factor).toFixed(2);
+}
+
+function ScheduleEditor({ rows, onChange, currency, disabled, unit = 'MINUTE' }) {
+  const unitWord = unit === 'HOUR' ? 'hour' : 'minute';
   const update = (key, patch) => onChange(rows.map((r) => (r.key === key ? { ...r, ...patch } : r)));
   const remove = (key) => onChange(rows.filter((r) => r.key !== key));
   const add = () => onChange([...rows, { key: newKey(), days: [1, 2, 3, 4, 5], startHour: 0, endHour: 24, rate: '' }]);
@@ -192,7 +205,7 @@ function ScheduleEditor({ rows, onChange, currency, disabled }) {
     <Stack spacing={2}>
       <Typography variant="subtitle2" fontWeight={600}>Time-of-day rates (optional)</Typography>
       <Typography variant="caption" color="text.secondary">
-        A minute that falls inside a time window is charged at that window's price. Other minutes use the base price.
+        A {unitWord} that starts inside a time window is charged at that window's price. Other {unitWord}s use the base price.
         Windows can't overlap. A window that runs past midnight, such as 22:00 to 06:00, is supported. Times use the
         server's clock. For example, a lower price on weekends is one window on Saturday and Sunday.
       </Typography>
@@ -237,7 +250,7 @@ function ScheduleEditor({ rows, onChange, currency, disabled }) {
                 ))}
               </TextField>
               <TextField
-                label="Price per minute"
+                label={`Price per ${unitWord}`}
                 value={r.rate}
                 onChange={(e) => update(r.key, { rate: e.target.value })}
                 slotProps={{ input: { startAdornment: `${currency} ` } }}
@@ -260,19 +273,45 @@ function ScheduleEditor({ rows, onChange, currency, disabled }) {
   );
 }
 
-function RateCalculator({ calc, onCalc, result, marginText, powerKw, currency, onUse, disabled }) {
+// Shows whether the calculator's inputs are saved yet.
+function SaveStatus({ state }) {
+  if (state.state === 'saving') {
+    return (
+      <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+        <CircularProgress size={16} />
+        <Typography variant="body2" color="text.secondary">Saving…</Typography>
+      </Stack>
+    );
+  }
+  if (state.state === 'error') {
+    return <Alert severity="error">Could not save the calculator. {state.message}</Alert>;
+  }
+  if (state.state === 'saved') {
+    return <Typography variant="body2" color="success.main">Saved automatically.</Typography>;
+  }
+  return <Typography variant="body2" color="text.secondary">Changes are saved automatically as you type.</Typography>;
+}
+
+function RateCalculatorDialog({ open, onClose, calc, onCalc, result, marginText, powerKw, currency, onUse, disabled, unit, saveState, isDefault }) {
   const set = (key) => (e) => onCalc({ ...calc, [key]: e.target.value });
   const kw = Number(powerKw) || Number(DEFAULT_POWER_KW);
-  // A per-minute price is whole cents, so one cent a minute is this many cents per kWh at this power.
-  const centsPerKwhPerCent = (6000 / kw).toFixed(1);
+  // Per-minute prices are whole cents, so one cent a minute is this many cents per kWh at this power.
+  const perHour = unit === 'HOUR';
+  const centsPerKwhPerCent = (perHour ? 100 : 6000) / kw;
+  const perUnit = perHour ? 'hour' : 'minute';
 
   return (
-    <Accordion variant="outlined" disableGutters>
-      <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-        <Typography fontWeight={600}>Rate calculator</Typography>
-      </AccordionSummary>
-      <AccordionDetails>
-        <Stack spacing={3}>
+    <Dialog open={open} onClose={onClose} fullWidth maxWidth="md" aria-labelledby="calc-title">
+      <DialogTitle id="calc-title">Energy cost calculator</DialogTitle>
+      <DialogContent>
+        <Stack spacing={3} sx={{ mt: 1 }}>
+          <SaveStatus state={saveState} />
+          {isDefault && (
+            <Alert severity="info">
+              These are conservative starting values: the costs are set on the high side, so the price is not set below the
+              real cost. Replace them with your own figures from your bills.
+            </Alert>
+          )}
           <Typography variant="body2" color="text.secondary">
             Enter what the energy costs you. The calculator works out the cost of each kWh, spreads the monthly charges
             over the energy you expect to sell, and adds your profit margin. It is a planning aid. Check the figures
@@ -336,8 +375,10 @@ function RateCalculator({ calc, onCalc, result, marginText, powerKw, currency, o
                   Price with a {marginText}% margin: <strong>{money(result.pricePerKwhCents, currency)} per kWh</strong>
                 </Typography>
                 <Typography variant="body2" color="text.secondary">
-                  At {kw} kW, that is about {money((result.pricePerKwhCents * kw) / 60, currency)} per minute. Per-minute
-                  prices are whole cents, so at this power one cent a minute is about {centsPerKwhPerCent} cents per kWh.
+                  At {kw} kW, that is about{' '}
+                  {money(perHour ? result.pricePerKwhCents * kw : (result.pricePerKwhCents * kw) / 60, currency)} per {perUnit}.
+                  Base prices are whole cents, so at this power one cent per {perUnit} is about {centsPerKwhPerCent.toFixed(1)}{' '}
+                  cents per kWh.
                 </Typography>
                 {result.solarKwhPerMonth > 0 && (
                   <Typography variant="body2" color="text.secondary">
@@ -354,8 +395,11 @@ function RateCalculator({ calc, onCalc, result, marginText, powerKw, currency, o
             )}
           </Paper>
         </Stack>
-      </AccordionDetails>
-    </Accordion>
+      </DialogContent>
+      <DialogActions sx={{ px: 3, pb: 2 }}>
+        <Button onClick={onClose}>Done</Button>
+      </DialogActions>
+    </Dialog>
   );
 }
 
@@ -374,12 +418,18 @@ export function AdminPaymentsPage() {
   const [saving, setSaving] = useState(false);
   const [charges, setCharges] = useState([]);
   const [statusFilter, setStatusFilter] = useState('');
+  const [calcOpen, setCalcOpen] = useState(false);
+  // The calculator saves itself: calcDirty is set when the admin edits it, and not when the page loads.
+  const [calcDirty, setCalcDirty] = useState(false);
+  const [calcSave, setCalcSave] = useState({ state: 'idle' });
+  const [calcIsDefault, setCalcIsDefault] = useState(false);
 
   async function loadSettings() {
     const { data } = await api.get('/api/admin/payments/settings');
     setSettings(data.settings);
     setProviders(data.providers);
     setForm(formFrom(data));
+    setCalcIsDefault(Boolean(data.calculatorIsDefault));
     setPreview({ check: data.check, calculator: data.calculator, schedule: data.schedule });
   }
 
@@ -414,8 +464,45 @@ export function AdminPaymentsPage() {
     return () => clearTimeout(timer);
   }, [form, acknowledged, canManage]);
 
+  // Saves the calculator's inputs as the admin types, after a short pause. Only the cost
+  // inputs are saved, so the price itself does not change.
+  useEffect(() => {
+    if (!calcDirty || !form || !canManage) return undefined;
+    setCalcSave({ state: 'saving' });
+    const timer = setTimeout(async () => {
+      try {
+        const { data } = await api.put('/api/admin/payments/calculator', {
+          rateCalculatorInputs: calcPayload(form.calc),
+        });
+        setCalcIsDefault(false);
+        setCalcSave({ state: 'saved' });
+        setPreview((p) => ({ ...p, check: data.check, calculator: data.calculator }));
+      } catch (err) {
+        setCalcSave({ state: 'error', message: err.response?.data?.error ?? 'Check the figures and try again.' });
+      }
+    }, 700);
+    return () => clearTimeout(timer);
+  }, [form?.calc, calcDirty, canManage]);
+
   function update(field) {
     return (e) => setForm((f) => ({ ...f, [field]: e.target.value }));
+  }
+
+  // Changes the time unit and converts the typed rates, so the price stays the same.
+  function setTimeUnit(unit) {
+    if (!unit || unit === form.timeBillingUnit) return;
+    const factor = unit === 'HOUR' ? 60 : 1 / 60;
+    setForm((f) => ({
+      ...f,
+      timeBillingUnit: unit,
+      ratePerMinute: convertRate(f.ratePerMinute, factor),
+      schedule: f.schedule.map((w) => ({ ...w, rate: convertRate(w.rate, factor) })),
+    }));
+  }
+
+  function editCalculator(calc) {
+    setForm((f) => ({ ...f, calc }));
+    setCalcDirty(true);
   }
 
   function useCalculatedPrice() {
@@ -424,9 +511,10 @@ export function AdminPaymentsPage() {
     if (form.pricingModel === 'ENERGY') {
       setForm((f) => ({ ...f, ratePerKwh: (price / 100).toFixed(2) }));
     } else {
-      // Per-minute prices are whole cents, so round to the nearest cent a minute.
+      // Base prices are whole cents per unit. Per hour is the cost at this power; per minute is that divided by 60.
       const kw = Number(form.referencePowerKw) || Number(DEFAULT_POWER_KW);
-      setForm((f) => ({ ...f, ratePerMinute: (Math.round((price * kw) / 60) / 100).toFixed(2) }));
+      const perUnit = form.timeBillingUnit === 'HOUR' ? price * kw : (price * kw) / 60;
+      setForm((f) => ({ ...f, ratePerMinute: (Math.round(perUnit) / 100).toFixed(2) }));
     }
   }
 
@@ -442,6 +530,8 @@ export function AdminPaymentsPage() {
       setAcknowledged(false);
       setHighRateConfirmed(false);
       setForm(formFrom(data));
+      setCalcDirty(false);
+      setCalcIsDefault(Boolean(data.calculatorIsDefault));
       setPreview({ check: data.check, calculator: data.calculator, schedule: data.schedule });
       setSuccess('Payment settings saved.');
       loadCharges();
@@ -465,6 +555,7 @@ export function AdminPaymentsPage() {
   const check = preview?.check;
   const needsHighRateConfirm = form.pricingModel !== 'FREE' && (check?.level === 'WARN' || check?.level === 'STRONG');
   const saveDisabled = saving || !canManage || (needsAck && !acknowledged) || (needsHighRateConfirm && !highRateConfirmed);
+  const unitWord = form.timeBillingUnit === 'HOUR' ? 'hour' : 'minute';
   const holdProviderOk = form.provider === 'STRIPE' || form.provider === 'BRAINTREE';
   const holdsDisabled = !canManage || form.pricingModel === 'FREE' || !holdProviderOk;
 
@@ -509,13 +600,32 @@ export function AdminPaymentsPage() {
                     the same per minute as any other. Some places require EV charging to be billed by energy, or set rules on
                     how it is measured. Check your local rules first.
                   </Alert>
+                  <FormControl disabled={!canManage}>
+                    <FormLabel>Bill the base price per</FormLabel>
+                    <ToggleButtonGroup
+                      exclusive
+                      size="small"
+                      value={form.timeBillingUnit}
+                      onChange={(_, unit) => setTimeUnit(unit)}
+                      aria-label="Time billing unit"
+                      sx={{ mt: 1, alignSelf: 'flex-start' }}
+                    >
+                      <ToggleButton value="MINUTE">Minute</ToggleButton>
+                      <ToggleButton value="HOUR">Hour</ToggleButton>
+                    </ToggleButtonGroup>
+                    <FormHelperText>
+                      {form.timeBillingUnit === 'HOUR'
+                        ? 'Each started hour is billed. A session of 1 hour and 10 minutes pays for two hours.'
+                        : 'Each started minute is billed. Switching the unit converts the prices you have typed.'}
+                    </FormHelperText>
+                  </FormControl>
                   <TextField
-                    label="Base price per minute"
+                    label={`Base price per ${unitWord}`}
                     value={form.ratePerMinute}
                     onChange={update('ratePerMinute')}
                     slotProps={{ input: { startAdornment: form.currency + ' ' } }}
                     disabled={!canManage}
-                    helperText="Used for every minute that is not in a time window below."
+                    helperText={`Used for every ${unitWord} that is not in a time window below.`}
                     fullWidth
                   />
                   <ScheduleEditor
@@ -523,9 +633,12 @@ export function AdminPaymentsPage() {
                     onChange={(schedule) => setForm((f) => ({ ...f, schedule }))}
                     currency={form.currency}
                     disabled={!canManage}
+                    unit={form.timeBillingUnit}
                   />
                   <Typography variant="caption" color="text.secondary">
-                    Each minute is priced by when it happens, and a session is billed for every started minute.
+                    {form.timeBillingUnit === 'HOUR'
+                      ? 'Each hour is priced by when it starts, and a session is billed for every started hour.'
+                      : 'Each minute is priced by when it happens, and a session is billed for every started minute.'}
                   </Typography>
                 </Stack>
               )}
@@ -580,18 +693,37 @@ export function AdminPaymentsPage() {
                 </Stack>
               )}
 
-              {form.pricingModel !== 'FREE' && (
-                <RateCalculator
-                  calc={form.calc}
-                  onCalc={(calc) => setForm((f) => ({ ...f, calc }))}
-                  result={preview?.calculator}
-                  marginText={form.calc.margin || '0'}
-                  powerKw={form.referencePowerKw}
-                  currency={form.currency}
-                  onUse={useCalculatedPrice}
-                  disabled={!canManage}
-                />
-              )}
+              <Paper variant="outlined" sx={{ p: 2 }}>
+                <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} sx={{ alignItems: { sm: 'center' } }}>
+                  <Stack sx={{ flexGrow: 1 }}>
+                    <Typography fontWeight={600}>Energy cost calculator</Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      {preview?.calculator
+                        ? `The energy costs about ${money(preview.calculator.costPerKwhCents, form.currency)} per kWh, so a price with your margin is ${money(preview.calculator.pricePerKwhCents, form.currency)} per kWh.`
+                        : 'Enter what the energy costs you to see a price.'}
+                    </Typography>
+                  </Stack>
+                  <Button variant="outlined" onClick={() => setCalcOpen(true)}>
+                    Open calculator
+                  </Button>
+                </Stack>
+              </Paper>
+
+              <RateCalculatorDialog
+                open={calcOpen}
+                onClose={() => setCalcOpen(false)}
+                calc={form.calc}
+                onCalc={editCalculator}
+                result={preview?.calculator}
+                marginText={form.calc.margin || '0'}
+                powerKw={form.referencePowerKw}
+                currency={form.currency}
+                onUse={useCalculatedPrice}
+                disabled={!canManage}
+                unit={form.timeBillingUnit}
+                saveState={canManage ? calcSave : { state: 'idle' }}
+                isDefault={calcIsDefault && !calcDirty}
+              />
 
               <Divider />
 
@@ -639,7 +771,7 @@ export function AdminPaymentsPage() {
                           {p.value !== 'NONE' && !status?.configured && status?.missing?.length > 0 && (
                             <>
                               {' '}Missing keys: {status.missing.join(', ')}. Add them on the{' '}
-                              <RouterLink to="/admin/integrations">Integrations</RouterLink> tab.
+                              <RouterLink to="/admin/integrations">Payment providers</RouterLink>.
                             </>
                           )}
                         </Typography>
@@ -726,6 +858,11 @@ export function AdminPaymentsPage() {
                         {c.durationMinutes} min
                         {c.energyKwh != null ? ` · ${c.energyKwh.toFixed(2)} kWh` : ''}
                       </Typography>
+                      {c.energyNote && (c.status === 'NEEDS_REVIEW' || c.energySource === 'METER_VALUES') && (
+                        <Typography variant="caption" display="block" color={c.status === 'NEEDS_REVIEW' ? 'error' : 'text.secondary'}>
+                          {c.energyNote}
+                        </Typography>
+                      )}
                       {c.heldCents > 0 && (
                         <Typography variant="caption" display="block" color="text.secondary">
                           Hold covered {money(c.heldCents, c.currency)}
@@ -743,6 +880,7 @@ export function AdminPaymentsPage() {
           </Table>
         </Paper>
       </Stack>
+      <MeterReadingsSettings />
     </Container>
   );
 }

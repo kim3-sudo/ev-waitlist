@@ -19,17 +19,21 @@ export function isInPeakWindow(date, startHour, endHour) {
   return startHour < endHour ? hour >= startHour && hour < endHour : hour >= startHour || hour < endHour;
 }
 
-export function computeCharge(settings, { startedAt, stoppedAt, meterStart, meterStop }) {
+// `energy` is the result of the billing check (payments/energyCheck.js). When it is
+// given, its energy is billed and its review flag is respected. Without it, energy is
+// the end-of-session reading.
+export function computeCharge(settings, { startedAt, stoppedAt, meterStart, meterStop, energy }) {
   const durationSeconds = Math.max(0, Math.round((stoppedAt - startedAt) / 1000));
   const hasReading = meterStart != null && meterStop != null && meterStop >= meterStart;
-  const energyWh = hasReading ? meterStop - meterStart : null;
+  const energyWh = energy ? energy.energyWh : hasReading ? meterStop - meterStart : null;
+  const reviewEnergy = energy?.needsReview === true;
 
   if (settings.pricingModel === 'FREE') {
     return { amountCents: 0, durationSeconds, energyWh, status: 'NO_CHARGE' };
   }
 
   if (settings.pricingModel === 'ENERGY') {
-    if (energyWh == null) {
+    if (energyWh == null || reviewEnergy) {
       return { amountCents: 0, durationSeconds, energyWh, status: 'NEEDS_REVIEW' };
     }
     const amountCents = Math.round((energyWh / 1000) * settings.ratePerKwhCents);
@@ -37,10 +41,13 @@ export function computeCharge(settings, { startedAt, stoppedAt, meterStart, mete
   }
 
   const grid = rateGrid(settings.ratePerMinuteCents, scheduleFor(settings));
-  const minutes = Math.ceil(durationSeconds / 60);
+  // Each started minute (or hour) is billed at the rate in effect when it starts.
+  const hourly = settings.timeBillingUnit === 'HOUR';
+  const unitSeconds = hourly ? 3600 : 60;
+  const units = Math.ceil(durationSeconds / unitSeconds);
   let amountCents = 0;
-  for (let m = 0; m < minutes; m += 1) {
-    amountCents += rateAt(grid, new Date(startedAt.getTime() + m * 60_000));
+  for (let u = 0; u < units; u += 1) {
+    amountCents += rateAt(grid, new Date(startedAt.getTime() + u * unitSeconds * 1000));
   }
   return { amountCents, durationSeconds, energyWh, status: amountCents > 0 ? 'PENDING' : 'NO_CHARGE' };
 }

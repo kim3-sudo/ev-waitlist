@@ -2,7 +2,8 @@ import { prisma } from '../db.js';
 import { siteConfig } from './runtimeConfig.js';
 import { registry } from './stationRegistry.js';
 import { nextReservationId } from './reservationIdCounter.js';
-import { notify } from './notifier.js';
+import { notifyDriver } from './notifier.js';
+import { renderMessage } from './messageTemplates.js';
 import { nextWaitingEntry } from './queueService.js';
 import { createHoldForEntry, releaseOpenHoldsFor } from './payments/holds.js';
 import { formatMoney } from './payments/chargeService.js';
@@ -14,7 +15,8 @@ export async function onConnectorFreed(stationId, connectorId) {
   const connector = await prisma.connector.findUnique({
     where: { stationId_connectorId: { stationId, connectorId } },
   });
-  if (!connector || connector.status !== 'Available') return;
+  // An admin's out-of-service connector is never offered to a driver.
+  if (!connector || connector.status !== 'Available' || !connector.operative) return;
 
   // A soft (app-only) hold never changes the connector's OCPP status back
   // away from "Available" -- only a real StatusNotification does. Without
@@ -86,10 +88,12 @@ export async function onConnectorFreed(stationId, connectorId) {
   const holdNote = hold && hold.status !== 'HELD'
     ? ` Before you plug in, place a hold of ${formatMoney(hold.amountCents, hold.currency)} on your card here: ${siteConfig().webUrl}/pay/hold/${hold.token}`
     : '';
-  await notify(
-    entry.contact,
-    `${station.name} is ready for you. Plug in by ${expiresAt.toLocaleTimeString()} or your spot will be released.${holdNote}`,
-  );
+  const message = await renderMessage('READY_TO_CHARGE', {
+    station: station.name,
+    deadline: expiresAt.toLocaleTimeString(),
+    hold: holdNote,
+  });
+  await notifyDriver(entry, message);
 }
 
 // Called whenever a connector's StatusNotification reports that a session
@@ -113,17 +117,13 @@ export async function onChargeComplete(stationId, connectorId) {
       orderBy: { createdAt: 'desc' },
     });
     if (occupant) {
-      await notify(
-        occupant.contact,
-        `Your charging session at ${station.name} is complete. Please unplug and move your vehicle for the next person.`,
-      );
+      const moveMessage = await renderMessage('MOVE_VEHICLE', { station: station.name });
+      await notifyDriver(occupant, moveMessage);
     }
   }
 
-  await notify(
-    upcoming.contact,
-    `You're next in line for ${station.name}. The current vehicle is finishing up -- get ready, and we'll notify you the moment it's free.`,
-  );
+  const nextMessage = await renderMessage('NEXT_IN_LINE', { station: station.name });
+  await notifyDriver(upcoming, nextMessage);
 }
 
 // If a station has a free connector right when someone joins, dispatch
@@ -132,7 +132,7 @@ export async function tryDispatchStation(stationId) {
   // connectorId 0 is OCPP's "whole station" pseudo-connector, not a physical
   // one anyone can plug into -- exclude it from dispatch.
   const connectors = await prisma.connector.findMany({
-    where: { stationId, status: 'Available', connectorId: { gt: 0 } },
+    where: { stationId, status: 'Available', operative: true, connectorId: { gt: 0 } },
   });
   for (const connector of connectors) {
     await onConnectorFreed(stationId, connector.connectorId);
@@ -144,7 +144,7 @@ export async function tryDispatchStation(stationId) {
 // already has a free connector right now.
 export async function tryDispatchZone(zoneId) {
   const connectors = await prisma.connector.findMany({
-    where: { status: 'Available', connectorId: { gt: 0 }, station: { zoneId } },
+    where: { status: 'Available', operative: true, connectorId: { gt: 0 }, station: { zoneId } },
   });
   for (const connector of connectors) {
     await onConnectorFreed(connector.stationId, connector.connectorId);
@@ -260,7 +260,7 @@ export async function cancelQueueEntry(entryId) {
   return prisma.queueEntry.update({ where: { id: entryId }, data: { status: 'CANCELLED', closedAt: new Date() } });
 }
 
-async function releaseReservation(reservation, station) {
+export async function releaseReservation(reservation, station) {
   const client = registry.getClient(station.identity);
   if (client && reservation.ocppReservationId != null) {
     try {
@@ -282,12 +282,15 @@ export async function sweepExpiredReservations() {
 
   for (const reservation of expired) {
     await releaseReservation(reservation, reservation.station);
-    await prisma.queueEntry.update({
-      where: { id: reservation.queueEntryId },
-      data: { status: 'EXPIRED', closedAt: new Date() },
-    });
-    // The driver's turn is over, so any card hold they placed for it goes.
-    if (reservation.queueEntry) await releaseOpenHoldsFor(reservation.queueEntry.idTag);
+    // A manual hold (an admin's, with no waitlist entry) has no driver's turn to end.
+    if (reservation.queueEntryId) {
+      await prisma.queueEntry.update({
+        where: { id: reservation.queueEntryId },
+        data: { status: 'EXPIRED', closedAt: new Date() },
+      });
+      // The driver's turn is over, so any card hold they placed for it goes.
+      if (reservation.queueEntry) await releaseOpenHoldsFor(reservation.queueEntry.idTag);
+    }
     // The connector is presumably still Available; let the next person in.
     await onConnectorFreed(reservation.stationId, reservation.connectorId);
   }

@@ -94,8 +94,25 @@ export function highestPricePerKwhCents(settings, powerKw = DEFAULT_REFERENCE_PO
   if (settings.pricingModel === 'FREE') return 0;
   if (settings.pricingModel === 'ENERGY') return settings.ratePerKwhCents;
   const grid = rateGrid(settings.ratePerMinuteCents, scheduleFor(settings));
-  return (highestRate(grid) * 60) / powerKw;
+  // A rate is per minute or per hour, depending on the time billing unit.
+  const perHour = settings.timeBillingUnit === 'HOUR' ? highestRate(grid) : highestRate(grid) * 60;
+  return perHour / powerKw;
 }
+
+// Conservative starting values for a new calculator: the costs are on the high side,
+// so the price isn't set below what the energy really costs. The admin replaces them
+// with their own figures.
+export const DEFAULT_CALCULATOR_INPUTS = {
+  energyCostPerKwhCents: 35,
+  distributionPerKwhCents: 10,
+  solarCostPerKwhCents: 0,
+  customerChargePerMonthCents: 3000,
+  infrastructurePerMonthCents: 10000,
+  solarKw: 0,
+  solarKwhPerKwPerYear: 0,
+  monthlyKwh: 1000,
+  marginPercent: 20,
+};
 
 // Compares a price with the cost. Returns { level: 'NONE' | 'OK' | 'WARN' | 'STRONG', ratio, limits }.
 // NONE means there is no cost to compare with (the calculator has not been used).

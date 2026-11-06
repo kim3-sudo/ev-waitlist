@@ -9,11 +9,16 @@ import { SsoCallbackPage } from './pages/SsoCallbackPage.jsx';
 import { AccountPage } from './pages/AccountPage.jsx';
 import { AdminStationsPage } from './pages/AdminStationsPage.jsx';
 import { AdminZonesPage } from './pages/AdminZonesPage.jsx';
-import { AdminSettingsPage } from './pages/AdminSettingsPage.jsx';
-import { AdminComplaintsPage } from './pages/AdminComplaintsPage.jsx';
+import { AdminBrandingPage } from './pages/AdminBrandingPage.jsx';
+import { AdminWaitlistPage } from './pages/AdminWaitlistPage.jsx';
+import { AdminTemplatesPage } from './pages/AdminTemplatesPage.jsx';
+import { AdminEmailPage } from './pages/AdminEmailPage.jsx';
+import { AdminSmsPage } from './pages/AdminSmsPage.jsx';
 import { ReportsPage } from './pages/ReportsPage.jsx';
 import { IdleReportPage } from './pages/IdleReportPage.jsx';
 import { ComplaintsSummaryPage } from './pages/ComplaintsSummaryPage.jsx';
+import { EnergyReportPage } from './pages/EnergyReportPage.jsx';
+import { UsageReportPage } from './pages/UsageReportPage.jsx';
 import { HelpPage } from './help/HelpPage.jsx';
 import { AdminUsersPage } from './pages/AdminUsersPage.jsx';
 import { AdminSsoPage } from './pages/AdminSsoPage.jsx';
@@ -83,6 +88,8 @@ export default function App() {
           <Route index element={<Navigate to="idle" replace />} />
           <Route path="idle" element={<IdleReportPage />} />
           <Route path="complaints" element={<ComplaintsSummaryPage />} />
+          <Route path="usage" element={<UsageReportPage />} />
+          <Route path="energy" element={<EnergyReportPage />} />
         </Route>
         <Route
           path="/help"
@@ -112,7 +119,7 @@ export default function App() {
         >
           <Route index element={<AdminStationsPage />} />
           <Route path="zones" element={<AdminZonesPage />} />
-          <Route path="complaints" element={<AdminComplaintsPage />} />
+          <Route path="complaints" element={<Navigate to="/reports/complaints" replace />} />
           <Route path="reports" element={<Navigate to="/reports/idle" replace />} />
           <Route
             path="payments"
@@ -126,7 +133,39 @@ export default function App() {
             path="branding"
             element={
               <PermissionRoute permission="branding.manage">
-                <AdminSettingsPage />
+                <AdminBrandingPage />
+              </PermissionRoute>
+            }
+          />
+          <Route
+            path="waitlist"
+            element={
+              <PermissionRoute permission="branding.manage">
+                <AdminWaitlistPage />
+              </PermissionRoute>
+            }
+          />
+          <Route
+            path="templates"
+            element={
+              <PermissionRoute permission="branding.manage">
+                <AdminTemplatesPage />
+              </PermissionRoute>
+            }
+          />
+          <Route
+            path="email"
+            element={
+              <PermissionRoute permission="integrations.manage">
+                <AdminEmailPage />
+              </PermissionRoute>
+            }
+          />
+          <Route
+            path="sms"
+            element={
+              <PermissionRoute permission="integrations.manage">
+                <AdminSmsPage />
               </PermissionRoute>
             }
           />

@@ -3,6 +3,7 @@ import { prisma } from '../db.js';
 import { registry } from '../services/stationRegistry.js';
 import { enqueueForActivePartners } from '../ocpi/outbox.js';
 import { CONNECTOR_STANDARDS, CONNECTOR_FORMATS, POWER_TYPES } from '../ocpi/mappers.js';
+import { latestReadings } from '../services/meterService.js';
 
 export const adminStationsRouter = Router();
 
@@ -19,6 +20,10 @@ function serialize(station) {
     zoneId: station.zoneId,
     zoneName: station.zone?.name ?? null,
     online: registry.isConnected(station.identity),
+    lastSeenAt: station.lastSeenAt ?? null,
+    offlineSince: station.offlineSince ?? null,
+    meterStatus: station.meterStatus,
+    faulted: station.connectors.some((c) => c.connectorId > 0 && c.status === 'Faulted'),
     connectors: station.connectors
       .filter((c) => c.connectorId > 0)
       .sort((a, b) => a.connectorId - b.connectorId),
@@ -131,6 +136,129 @@ adminStationsRouter.get('/identity-check', async (req, res) => {
   res.json({ available: true, error: null });
 });
 
+const TEST_TIMEOUT_MS = 10000;
+const TEST_POLL_MS = 500;
+
+// The connection test runs as a sequence of steps. The admin page calls one step at a
+// time and shows each result. The last two steps prove that the software can take the
+// charge point out of service and bring it back.
+export const CONNECTION_TEST_STEPS = [
+  'connected',
+  'configuration',
+  'deactivate',
+  'deactivated',
+  'activate',
+  'activated',
+];
+
+function withTimeout(promise, ms = TEST_TIMEOUT_MS) {
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error('timeout')), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
+
+// Connectors (and the whole-station row, 0) that the charge point has reported on since `since`.
+async function reportsSince(stationId, since) {
+  return prisma.connector.findMany({ where: { stationId, updatedAt: { gte: since } } });
+}
+
+// Waits until every connector the charge point has reported matches `matches`, with each
+// report arriving after `since`. Returns { ok, message }.
+async function waitForStatus(stationId, since, matches, what) {
+  const deadline = Date.now() + TEST_TIMEOUT_MS;
+  let last = [];
+  while (Date.now() < deadline) {
+    last = (await reportsSince(stationId, since)).filter((c) => c.connectorId > 0);    if (last.length > 0 && last.every((c) => matches(c.status))) {
+      return { ok: true, message: `The charge point reports ${what} on ${last.length} connector${last.length === 1 ? '' : 's'}.` };
+    }
+    await new Promise((resolve) => setTimeout(resolve, TEST_POLL_MS));
+  }
+  if (last.length === 0) {
+    return { ok: false, message: `The charge point did not report its status within ${TEST_TIMEOUT_MS / 1000} seconds.` };
+  }
+  const statuses = [...new Set(last.map((c) => c.status))].join(', ');
+  return { ok: false, message: `Expected ${what}, but the charge point reports: ${statuses}.` };
+}
+
+// Asks the charge point to go out of service (Inoperative) or back into service (Operative).
+async function changeAvailability(client, stationId, type) {
+  const result = await withTimeout(client.call('ChangeAvailability', { connectorId: 0, type }));
+  const status = result?.status;
+  if (status === 'Accepted') {
+    return { ok: true, message: `The charge point accepted the request (${type}).` };
+  }
+  if (status === 'Scheduled') {
+    return { ok: true, message: `The charge point scheduled the change. It applies once its current task ends.` };
+  }
+  return { ok: false, message: `The charge point replied ${status ?? 'with no status'} to ${type}.` };
+}
+
+// One step of the connection test. Body: { identity, since? } where `since` is the ISO
+// time the step sequence started for the status checks.
+adminStationsRouter.post('/test-connection/:step', async (req, res) => {
+  const step = req.params.step;
+  if (!CONNECTION_TEST_STEPS.includes(step)) return res.status(404).json({ error: 'Unknown test step' });
+
+  const identity = typeof req.body?.identity === 'string' ? req.body.identity.trim() : '';
+  if (!identity) return res.status(400).json({ error: 'identity is required' });
+
+  const station = await prisma.station.findUnique({ where: { identity } });
+  if (!station) {
+    return res.status(404).json({ error: `No charge point with identity "${identity}" in this site` });
+  }
+
+  const client = registry.getClient(identity);
+  const notConnected = {
+    ok: false,
+    message: 'The charge point is not connected. Point it at the address shown, and check that it can reach this server.',
+  };
+  const since = req.body?.since ? new Date(req.body.since) : new Date(Date.now() - TEST_TIMEOUT_MS);
+  if (Number.isNaN(since.getTime())) return res.status(400).json({ error: 'since must be a time' });
+
+  try {
+    if (step === 'connected') {
+      return res.json(client ? { ok: true, message: 'The charge point is connected.' } : notConnected);
+    }
+    if (!client) return res.json(notConnected);
+
+    if (step === 'configuration') {
+      const result = await withTimeout(client.call('GetConfiguration', {}));
+      const count = Array.isArray(result?.configurationKey) ? result.configurationKey.length : 0;
+      return res.json({ ok: true, message: `The charge point answered with ${count} setting${count === 1 ? '' : 's'}.` });
+    }
+
+    if (step === 'deactivate') {
+      // Taking a charge point out of service during a session would stop the driver's charging.
+      const open = await prisma.transaction.count({ where: { stationId: station.id, stoppedAt: null } });
+      if (open > 0) {
+        return res.json({ ok: false, message: 'A charging session is in progress. Stop it, then run the test again.' });
+      }
+      return res.json(await changeAvailability(client, station.id, 'Inoperative'));
+    }
+
+    if (step === 'deactivated') {
+      return res.json(await waitForStatus(station.id, since, (s) => s === 'Unavailable', 'Unavailable'));
+    }
+
+    if (step === 'activate') {
+      return res.json(await changeAvailability(client, station.id, 'Operative'));
+    }
+
+    // activated: any status other than Unavailable or Faulted means the charge point is back in service.
+    return res.json(
+      await waitForStatus(station.id, since, (s) => s !== 'Unavailable' && s !== 'Faulted', 'a status in service'),
+    );
+  } catch (err) {
+    const message =
+      err.message === 'timeout'
+        ? 'The charge point did not answer in time. Check its network connection.'
+        : 'The charge point returned an error to the test.';
+    return res.json({ ok: false, message });
+  }
+});
+
 adminStationsRouter.get('/:id', async (req, res) => {
   const station = await prisma.station.findUnique({
     where: { id: req.params.id },
@@ -138,6 +266,69 @@ adminStationsRouter.get('/:id', async (req, res) => {
   });
   if (!station) return res.status(404).json({ error: 'Station not found' });
   res.json(serialize(station));
+});
+
+// Everything the station page shows about a charge point's state: connection, what it
+// reports about itself, live meter readings, open sessions, holds, and recent history.
+adminStationsRouter.get('/:id/status', async (req, res) => {
+  const station = await prisma.station.findUnique({
+    where: { id: req.params.id },
+    include: { connectors: true },
+  });
+  if (!station) return res.status(404).json({ error: 'Station not found' });
+
+  const [readings, sessions, holds, events] = await Promise.all([
+    latestReadings(station.id),
+    prisma.transaction.findMany({ where: { stationId: station.id, stoppedAt: null }, orderBy: { startedAt: 'desc' } }),
+    prisma.reservation.findMany({ where: { stationId: station.id, status: 'ACTIVE' } }),
+    prisma.stationEvent.findMany({ where: { stationId: station.id }, orderBy: { at: 'desc' }, take: 50 }),
+  ]);
+
+  const connectors = station.connectors
+    .filter((c) => c.connectorId > 0)
+    .sort((a, b) => a.connectorId - b.connectorId)
+    .map((c) => {
+      const own = readings.filter((r) => r.connectorId === c.connectorId);
+      const hold = holds.find((h) => h.connectorId === c.connectorId);
+      return {
+        connectorId: c.connectorId,
+        status: c.status,
+        errorCode: c.errorCode,
+        info: c.info,
+        vendorErrorCode: c.vendorErrorCode,
+        operative: c.operative,
+        readings: Object.fromEntries(own.map((r) => [r.measurand, { value: r.value, at: r.at }])),
+        hold: hold
+          ? { id: hold.id, idTag: hold.idTag, note: hold.note, expiresAt: hold.expiresAt, manual: hold.queueEntryId == null }
+          : null,
+      };
+    });
+
+  res.json({
+    id: station.id,
+    name: station.name,
+    identity: station.identity,
+    online: registry.isConnected(station.identity),
+    lastSeenAt: station.lastSeenAt,
+    offlineSince: station.offlineSince,
+    vendor: station.vendor,
+    model: station.model,
+    serialNumber: station.serialNumber,
+    firmwareVersion: station.firmwareVersion,
+    firmwareStatus: station.firmwareStatus,
+    diagnosticsStatus: station.diagnosticsStatus,
+    meterStatus: station.meterStatus,
+    configurationAt: station.configurationAt,
+    connectors,
+    sessions: sessions.map((t) => ({
+      id: t.id,
+      connectorId: t.connectorId,
+      idTag: t.idTag,
+      startedAt: t.startedAt,
+      ocppTransactionId: t.ocppTransactionId,
+    })),
+    events: events.map((e) => ({ id: e.id, at: e.at, kind: e.kind, detail: e.detail, connectorId: e.connectorId })),
+  });
 });
 
 adminStationsRouter.post('/', async (req, res) => {

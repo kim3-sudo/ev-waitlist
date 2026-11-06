@@ -1,11 +1,20 @@
 import { Router } from 'express';
-import { updateSettings } from '../services/settingsService.js';
+import { settingsView, updateSettings } from '../services/settingsService.js';
 
 export const adminSettingsRouter = Router();
 
 adminSettingsRouter.put('/', async (req, res) => {
-  const { companyName, logoUrl, primaryColor, secondaryColor, fontFamily, identifierMode, mfaRequired } =
-    req.body ?? {};
+  const {
+    companyName,
+    logoUrl,
+    primaryColor,
+    secondaryColor,
+    fontFamily,
+    identifierMode,
+    mfaRequired,
+    plateRegionConfig,
+    defaultPlateRegion,
+  } = req.body ?? {};
 
   try {
     const settings = await updateSettings({
@@ -16,8 +25,10 @@ adminSettingsRouter.put('/', async (req, res) => {
       fontFamily,
       identifierMode,
       mfaRequired,
+      plateRegionConfig,
+      defaultPlateRegion,
     });
-    res.json(settings);
+    res.json(settingsView(settings));
   } catch (err) {
     res.status(400).json({ error: err.message });
   }

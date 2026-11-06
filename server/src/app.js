@@ -3,6 +3,7 @@ import cors from 'cors';
 import { allowedOrigins } from './services/runtimeConfig.js';
 import { adminSystemRouter } from './routes/admin.system.routes.js';
 import { adminIntegrationsRouter } from './routes/admin.integrations.routes.js';
+import { adminEmailRouter, adminSmsRouter } from './routes/admin.notifications.routes.js';
 import { authRouter } from './auth/auth.routes.js';
 import { samlRouter } from './auth/saml.routes.js';
 import { requireAdmin, requirePermission, requireReadOrManage } from './auth/auth.middleware.js';
@@ -10,10 +11,13 @@ import { stationsRouter } from './routes/stations.routes.js';
 import { zonesRouter } from './routes/zones.routes.js';
 import { waitlistRouter } from './routes/waitlist.routes.js';
 import { adminStationsRouter } from './routes/admin.stations.routes.js';
+import { adminStationCommandsRouter } from './routes/admin.stationCommands.routes.js';
 import { adminZonesRouter } from './routes/admin.zones.routes.js';
 import { settingsRouter } from './routes/settings.routes.js';
 import { adminSettingsRouter } from './routes/admin.settings.routes.js';
+import { adminTemplatesRouter } from './routes/admin.templates.routes.js';
 import { adminReportsRouter } from './routes/admin.reports.routes.js';
+import { adminUsageRouter } from './routes/admin.usage.routes.js';
 import { adminComplaintsRouter } from './routes/admin.complaints.routes.js';
 import { adminUsersRouter } from './routes/admin.users.routes.js';
 import { adminSamlRouter } from './routes/admin.saml.routes.js';
@@ -56,6 +60,8 @@ export function createApp() {
   app.use('/api/waitlist', waitlistRouter);
   // Each area has a view and a manage permission. Reads need view, writes need manage.
   app.use('/api/admin/stations', requireAdmin, requireReadOrManage('stations.view', 'stations.manage'), adminStationsRouter);
+  // Commands to charge points. Its own prefix, so viewers who can see stations are not blocked by it.
+  app.use('/api/admin/station-commands', requireAdmin, requirePermission('stations.control'), adminStationCommandsRouter);
   app.use('/api/admin/zones', requireAdmin, requireReadOrManage('zones.view', 'zones.manage'), adminZonesRouter);
   app.use('/api/settings', settingsRouter);
   app.use('/api/pay', payRouter);
@@ -71,7 +77,9 @@ export function createApp() {
   sitePublicRouter.use('/pay', payRouter);
   app.use('/api/t/:slug', tenantFromSlug, sitePublicRouter);
   app.use('/api/admin/settings', requirePermission('branding.manage'), adminSettingsRouter);
+  app.use('/api/admin/templates', requirePermission('branding.manage'), adminTemplatesRouter);
   app.use('/api/admin/reports', requirePermission('reports.view'), adminReportsRouter);
+  app.use('/api/admin/reports', requirePermission('reports.view'), adminUsageRouter);
   app.use('/api/admin/complaints', requireAdmin, requireReadOrManage('complaints.view', 'complaints.manage'), adminComplaintsRouter);
   app.use('/api/admin/users', requirePermission('users.manage'), adminUsersRouter);
   app.use('/api/admin/roles', requirePermission('users.manage'), adminRolesRouter);
@@ -79,6 +87,8 @@ export function createApp() {
   app.use('/api/admin/setup', requirePermission('branding.manage'), adminSetupRouter);
   app.use('/api/admin/payments', requireAdmin, requireReadOrManage('payments.view', 'payments.manage'), adminPaymentsRouter);
   app.use('/api/admin/integrations', requirePermission('integrations.manage'), adminIntegrationsRouter);
+  app.use('/api/admin/email', requirePermission('integrations.manage'), adminEmailRouter);
+  app.use('/api/admin/sms', requirePermission('integrations.manage'), adminSmsRouter);
   app.use('/api/admin/system', requirePermission('system.manage'), adminSystemRouter);
   app.use('/api/admin/sites', requirePermission('sites.manage'), requireInstanceAdmin, adminSitesRouter);
   app.use('/api/admin/operator', requirePermission('sites.manage'), requireInstanceAdmin, adminOperatorRouter);

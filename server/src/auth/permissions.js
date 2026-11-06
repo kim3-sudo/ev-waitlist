@@ -3,6 +3,7 @@
 export const PERMISSIONS = [
   { key: 'stations.view', group: 'Charge points', label: 'View charge points' },
   { key: 'stations.manage', group: 'Charge points', label: 'Add, edit, and remove charge points' },
+  { key: 'stations.control', group: 'Charge points', label: 'Send commands to charge points (stop sessions, unlock, reset, holds)' },
   { key: 'zones.view', group: 'Zones', label: 'View zones' },
   { key: 'zones.manage', group: 'Zones', label: 'Create, edit, and delete zones' },
   { key: 'complaints.view', group: 'Complaints', label: 'View line-cutting complaints' },

@@ -8,6 +8,11 @@ const DEFAULT_SETTINGS = {
   secondaryColor: '#1565c0',
   fontFamily: null,
   identifierMode: 'LICENSE_PLATE',
+  plateRegions: [],
+  plateRegionSets: [],
+  plateRegionCatalog: [],
+  plateRegionConfig: { sets: [], custom: [] },
+  defaultPlateRegion: null,
   // Assume set up until the server says otherwise, so a failed settings load
   // doesn't trap the admin in the wizard.
   setupCompleted: true,

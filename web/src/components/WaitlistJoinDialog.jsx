@@ -10,11 +10,14 @@ import {
   Alert,
   Checkbox,
   FormControlLabel,
+  ListSubheader,
+  MenuItem,
   Paper,
   Typography,
 } from '@mui/material';
 import { api } from '../api/client.js';
 import { useSettings } from '../context/SettingsContext.jsx';
+import { groupedRegions } from '../plateRegions.js';
 
 export function WaitlistJoinDialog({ target, onClose, onJoined }) {
   const { settings } = useSettings();
@@ -25,7 +28,12 @@ export function WaitlistJoinDialog({ target, onClose, onJoined }) {
   const [name, setName] = useState('');
   const [contact, setContact] = useState('');
   const [licensePlate, setLicensePlate] = useState('');
+  const [plateRegion, setPlateRegion] = useState(settings.defaultPlateRegion ?? '');
   const [parkingPermit, setParkingPermit] = useState('');
+  // Text messages, when the site has them set up. The driver opts in and gives a mobile number.
+  const smsOffered = Boolean(settings.smsAvailable);
+  const [wantsSms, setWantsSms] = useState(false);
+  const [smsNumber, setSmsNumber] = useState('');
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   // Roaming: when the site has it on, the warning must be read and accepted.
@@ -49,6 +57,10 @@ export function WaitlistJoinDialog({ target, onClose, onJoined }) {
       setError('Enter a license plate number or a parking permit number.');
       return;
     }
+    if (showPlate && licensePlate.trim() && !plateRegion) {
+      setError('Choose the place where the plate was issued.');
+      return;
+    }
 
     setSubmitting(true);
     try {
@@ -57,7 +69,9 @@ export function WaitlistJoinDialog({ target, onClose, onJoined }) {
         name,
         contact,
         licensePlate: showPlate ? licensePlate : undefined,
+        plateRegion: showPlate ? plateRegion : undefined,
         parkingPermit: showPermit ? parkingPermit : undefined,
+        smsNumber: smsOffered && wantsSms ? smsNumber : undefined,
         roamingWarningAccepted: roamingOn ? warningAccepted : undefined,
       });
       onJoined({ entryId: data.id });
@@ -83,22 +97,66 @@ export function WaitlistJoinDialog({ target, onClose, onJoined }) {
               autoFocus
               fullWidth
             />
+            {/* Without text messages, the contact is an e-mail address only. */}
             <TextField
-              label="Email or phone"
-              helperText="We'll notify you here when a charger is ready."
+              label={smsOffered ? 'Email or phone' : 'Email'}
+              type={smsOffered ? 'text' : 'email'}
+              helperText={
+                smsOffered
+                  ? "We'll notify you here when a charger is ready."
+                  : "We'll e-mail you here when a charger is ready."
+              }
               value={contact}
               onChange={(e) => setContact(e.target.value)}
               required
               fullWidth
             />
+            {smsOffered && (
+              <Stack spacing={1}>
+                <FormControlLabel
+                  control={<Checkbox checked={wantsSms} onChange={(e) => setWantsSms(e.target.checked)} />}
+                  label="Also send me text messages"
+                />
+                {wantsSms && (
+                  <TextField
+                    label="Mobile number"
+                    type="tel"
+                    value={smsNumber}
+                    onChange={(e) => setSmsNumber(e.target.value)}
+                    helperText="Include the country code, for example +1 555 123 4567."
+                    required
+                    fullWidth
+                  />
+                )}
+              </Stack>
+            )}
             {showPlate && (
-              <TextField
-                label="License plate number"
-                value={licensePlate}
-                onChange={(e) => setLicensePlate(e.target.value)}
-                required={identifierMode === 'LICENSE_PLATE'}
-                fullWidth
-              />
+              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
+                <TextField
+                  select
+                  label="Plate issued in"
+                  value={plateRegion}
+                  onChange={(e) => setPlateRegion(e.target.value)}
+                  sx={{ minWidth: { sm: 180 } }}
+                  required={identifierMode === 'LICENSE_PLATE'}
+                >
+                  {groupedRegions(settings.plateRegions).map((group) => [
+                    <ListSubheader key={`h-${group.name}`}>{group.name}</ListSubheader>,
+                    ...group.items.map((r) => (
+                      <MenuItem key={r.code} value={r.code}>
+                        {r.name}
+                      </MenuItem>
+                    )),
+                  ])}
+                </TextField>
+                <TextField
+                  label="License plate number"
+                  value={licensePlate}
+                  onChange={(e) => setLicensePlate(e.target.value)}
+                  required={identifierMode === 'LICENSE_PLATE'}
+                  fullWidth
+                />
+              </Stack>
             )}
             {showPermit && (
               <TextField

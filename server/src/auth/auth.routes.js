@@ -197,5 +197,20 @@ authRouter.get('/me', requireAdminAllowingPasswordChange, async (req, res) => {
     hasPassword: Boolean(admin.passwordHash),
     mustChangePassword: admin.mustChangePassword,
     instanceAdmin: admin.instanceAdmin,
+    alertOnFault: admin.alertOnFault,
+    alertOffline: admin.alertOffline,
   });
+});
+
+// The admin chooses which charge point alerts they receive by e-mail. Nobody else's choice changes.
+authRouter.put('/alerts', requireAdminAllowingPasswordChange, async (req, res) => {
+  const { alertOnFault, alertOffline } = req.body ?? {};
+  const data = {};
+  for (const [key, value] of [['alertOnFault', alertOnFault], ['alertOffline', alertOffline]]) {
+    if (value === undefined) continue;
+    if (typeof value !== 'boolean') return res.status(400).json({ error: `${key} must be true or false` });
+    data[key] = value;
+  }
+  const admin = await prisma.admin.update({ where: { id: req.admin.sub }, data });
+  res.json({ alertOnFault: admin.alertOnFault, alertOffline: admin.alertOffline });
 });

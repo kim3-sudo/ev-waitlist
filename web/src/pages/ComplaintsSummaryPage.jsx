@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
-import { Container, MenuItem, Paper, Stack, TextField, Typography } from '@mui/material';
+import { Alert, Container, MenuItem, Paper, Stack, TextField, Typography } from '@mui/material';
 import { api } from '../api/client.js';
+import { useAuth } from '../context/AuthContext.jsx';
 import { ComplaintsSummaryTable } from '../components/ComplaintsSummaryTable.jsx';
+import { LineCuttingComplaintsTable } from '../components/LineCuttingComplaintsTable.jsx';
 
 const POLL_MS = 8000;
 const WINDOWS = [
@@ -10,20 +12,34 @@ const WINDOWS = [
   { days: 90, label: 'Last 90 days' },
 ];
 
+// Line-cutting complaints: the summary by station, and the complaints themselves, where
+// they can be resolved or dismissed. The list needs the complaints permission.
 export function ComplaintsSummaryPage() {
+  const { can } = useAuth();
+  const canView = can('complaints.view');
   const [summary, setSummary] = useState(null);
+  const [complaints, setComplaints] = useState([]);
   const [days, setDays] = useState(30);
 
   async function refresh() {
     const { data } = await api.get('/api/admin/reports/complaints-summary', { params: { days } });
     setSummary(data);
+    if (canView) {
+      const list = await api.get('/api/admin/complaints');
+      setComplaints(list.data);
+    }
   }
 
   useEffect(() => {
     refresh();
     const id = setInterval(refresh, POLL_MS);
     return () => clearInterval(id);
-  }, [days]);
+  }, [days, canView]);
+
+  async function handleUpdateStatus(id, status) {
+    await api.patch(`/api/admin/complaints/${id}`, { status });
+    refresh();
+  }
 
   const totals = summary?.totals;
 
@@ -47,9 +63,24 @@ export function ComplaintsSummaryPage() {
           ))}
         </TextField>
       </Stack>
-      <Paper variant="outlined">
+      <Paper variant="outlined" sx={{ mb: 4 }}>
         <ComplaintsSummaryTable rows={summary?.rows ?? []} />
       </Paper>
+
+      <Typography variant="h6" fontWeight={600} sx={{ mb: 1 }}>
+        Complaints to review
+      </Typography>
+      {canView ? (
+        <Paper variant="outlined">
+          <LineCuttingComplaintsTable
+            complaints={complaints}
+            onUpdateStatus={handleUpdateStatus}
+            readOnly={!can('complaints.manage')}
+          />
+        </Paper>
+      ) : (
+        <Alert severity="info">Your role can't view individual complaints. Ask an admin for access.</Alert>
+      )}
     </Container>
   );
 }

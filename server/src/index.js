@@ -6,6 +6,7 @@ import { createCentralSystem } from './ocpp/centralSystem.js';
 import { startReservationSweeper } from './services/reservationSweeper.js';
 import { startRetentionSweeper } from './services/retentionSweeper.js';
 import { startOcpiDispatcher } from './ocpi/outbox.js';
+import { startStationWatch } from './services/stationWatch.js';
 
 // Settings come from the database, so load them before anything starts serving.
 await ensureDefaultTenant();
@@ -25,3 +26,4 @@ httpServer.on('upgrade', centralSystem.handleUpgrade);
 startReservationSweeper();
 startRetentionSweeper();
 startOcpiDispatcher();
+startStationWatch();

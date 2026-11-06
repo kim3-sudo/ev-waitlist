@@ -19,6 +19,7 @@ import { useAuth } from '../context/AuthContext.jsx';
 import { StationsTable } from '../components/StationsTable.jsx';
 import { StationFormDialog } from '../components/StationFormDialog.jsx';
 import { ChargePointWizardDialog } from '../components/ChargePointWizardDialog.jsx';
+import { StationStatusDialog } from '../components/StationStatusDialog.jsx';
 
 const POLL_MS = 8000;
 
@@ -30,6 +31,7 @@ export function AdminStationsPage() {
   const [formTarget, setFormTarget] = useState(undefined); // undefined = closed, null = create, station = edit
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [search, setSearch] = useState('');
+  const [statusTarget, setStatusTarget] = useState(null);
 
   async function refresh() {
     const { data } = await api.get('/api/admin/stations');
@@ -92,9 +94,12 @@ export function AdminStationsPage() {
           stations={filteredStations}
           onEdit={setFormTarget}
           onDelete={setDeleteTarget}
+          onStatus={setStatusTarget}
           readOnly={!canManage}
         />
       </Paper>
+
+      {statusTarget && <StationStatusDialog stationId={statusTarget.id} onClose={() => setStatusTarget(null)} />}
 
       {wizardOpen && (
         <ChargePointWizardDialog

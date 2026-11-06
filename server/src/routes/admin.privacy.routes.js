@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { prisma, rawPrisma } from '../db.js';
 import { currentTenantId } from '../tenancy/context.js';
+import { clearCacheEverywhere } from '../services/stationCommands.js';
 
 // Mounted behind privacy.manage. Retention periods for this site, and early
 // erasure of one driver's personal data.
@@ -70,7 +71,7 @@ adminPrivacyRouter.post('/erase', async (req, res) => {
     // even after the sweep has already cleared the entry's contact.
     prisma.charge.updateMany({
       where: { idTag: entry.idTag },
-      data: { payerName: null, payerContact: null },
+      data: { payerName: null, payerContact: null, payerSmsNumber: null },
     }),
     prisma.paymentHold.updateMany({
       where: { idTag: entry.idTag },
@@ -78,9 +79,18 @@ adminPrivacyRouter.post('/erase', async (req, res) => {
     }),
     prisma.queueEntry.update({
       where: { id: entry.id },
-      data: { name: '', contact: '', licensePlate: null, parkingPermit: null },
+      data: { name: '', contact: '', smsNumber: null, licensePlate: null, plateRegion: null, parkingPermit: null },
     }),
   ]);
 
-  res.json({ erased: true, complaintNotesCleared: complaints.count, chargesCleared: charges.count, holdsCleared: holds.count });
+  // Charge points may still hold this driver's ID tag in their authorization cache.
+  const cacheClearedStations = await clearCacheEverywhere();
+
+  res.json({
+    erased: true,
+    complaintNotesCleared: complaints.count,
+    chargesCleared: charges.count,
+    holdsCleared: holds.count,
+    cacheClearedStations,
+  });
 });

@@ -1,8 +1,10 @@
 import { prisma } from '../../db.js';
-import { notify } from '../notifier.js';
+import { notifyDriver } from '../notifier.js';
+import { renderMessage } from '../messageTemplates.js';
 import { siteConfig } from '../runtimeConfig.js';
 import { getPaymentSettings } from './paymentSettingsService.js';
 import { computeCharge } from './pricing.js';
+import { checkTransactionEnergy } from './energyCheck.js';
 import { isProviderConfigured } from './providers.js';
 import { settleHoldForTransaction } from './holds.js';
 import { randomBytes } from 'node:crypto';
@@ -22,11 +24,14 @@ export async function createChargeForTransaction(stationId, ocppTransactionId) {
   if (!tx || !tx.stoppedAt || tx.charge || tx.partnerId) return null;
 
   const settings = await getPaymentSettings();
+  // The charger's own readings, checked against the end-of-session reading (see energyCheck.js).
+  const energy = await checkTransactionEnergy(tx, settings);
   const result = computeCharge(settings, {
     startedAt: tx.startedAt,
     stoppedAt: tx.stoppedAt,
     meterStart: tx.meterStart,
     meterStop: tx.meterStop,
+    energy,
   });
 
   // Drivers' contact details come from their waitlist entry for this idTag.
@@ -49,25 +54,34 @@ export async function createChargeForTransaction(stationId, ocppTransactionId) {
       idTag: tx.idTag,
       payerName: entry?.name ?? null,
       payerContact: entry?.contact ?? null,
+      payerSmsNumber: entry?.smsNumber ?? null,
       pricingModel: settings.pricingModel,
       currency: settings.currency,
       amountCents: balance,
       holdCapturedCents: held.capturedCents,
       durationSeconds: result.durationSeconds,
       energyWh: result.energyWh,
+      energySource: energy.source,
+      energyNote: energy.note,
       status,
       ...(status === 'PAID' ? { provider: held.provider, providerRef: held.providerRef, paidAt: new Date() } : {}),
     },
   });
 
   if (charge.status === 'PENDING' && settings.provider !== 'NONE' && isProviderConfigured(settings.provider)) {
-    if (charge.payerContact) {
+    if (charge.payerContact || charge.payerSmsNumber) {
       const link = `${siteConfig().webUrl}/pay/${charge.token}`;
       const cost = formatMoney(result.amountCents, charge.currency);
-      const text = held.capturedCents > 0
-        ? `Your charging session at ${tx.station.name} cost ${cost}. Your card hold covered ${formatMoney(held.capturedCents, charge.currency)}. Pay the remaining ${formatMoney(balance, charge.currency)} here: ${link}`
-        : `Your charging session at ${tx.station.name} cost ${cost}. Pay here: ${link}`;
-      await notify(charge.payerContact, text);
+      const message = held.capturedCents > 0
+        ? await renderMessage('PAYMENT_DUE_AFTER_HOLD', {
+          station: tx.station.name,
+          amount: cost,
+          held: formatMoney(held.capturedCents, charge.currency),
+          balance: formatMoney(balance, charge.currency),
+          paymentLink: link,
+        })
+        : await renderMessage('PAYMENT_DUE', { station: tx.station.name, amount: cost, paymentLink: link });
+      await notifyDriver({ contact: charge.payerContact, smsNumber: charge.payerSmsNumber }, message);
     }
   }
   return charge;

@@ -6,10 +6,21 @@ import {
   savePaymentSettings,
   paymentSettingsResponse,
   previewRates,
+  saveCalculatorInputs,
+  getPaymentSettings,
 } from '../services/payments/paymentSettingsService.js';
+import { currentTenantId } from '../tenancy/context.js';
 
 // Mounted behind payments.view (reads) and payments.manage (writes).
 export const adminPaymentsRouter = Router();
+
+// Auto-save for the energy-cost calculator. Saves only the cost inputs, not the price,
+// so it never needs the price confirmation.
+adminPaymentsRouter.put('/calculator', async (req, res) => {
+  const result = await saveCalculatorInputs(req.body ?? {});
+  if (result.error) return res.status(400).json({ error: result.error });
+  res.json(result);
+});
 
 adminPaymentsRouter.get('/settings', async (req, res) => {
   res.json(await paymentSettingsResponse());
@@ -28,6 +39,31 @@ adminPaymentsRouter.put('/settings', async (req, res) => {
   if (result.error) return res.status(400).json({ error: result.error });
   // Roaming partners hold a copy of the tariff; send the change.
   await enqueueForActivePartners('TARIFFS', TARIFF_ID);
+  res.json(await paymentSettingsResponse());
+});
+
+// Meter readings: how often charge points sample the meter, and how closely the readings
+// must match the end-of-session reading before they are billed (see energyCheck.js).
+const METER_LIMITS = {
+  meterSampleSeconds: [10, 3600],
+  meterToleranceWh: [0, 100000],
+  meterTolerancePct: [0, 100],
+  meterMinSessionMinutes: [0, 1440],
+  meterMaxJumpWh: [100, 1000000],
+};
+
+adminPaymentsRouter.put('/meter', async (req, res) => {
+  const body = req.body ?? {};
+  const data = {};
+  for (const [key, [min, max]] of Object.entries(METER_LIMITS)) {
+    if (body[key] === undefined) continue;
+    if (!Number.isInteger(body[key]) || body[key] < min || body[key] > max) {
+      return res.status(400).json({ error: `${key} must be a whole number from ${min} to ${max}` });
+    }
+    data[key] = body[key];
+  }
+  await getPaymentSettings();
+  await prisma.paymentSettings.update({ where: { tenantId: currentTenantId() }, data });
   res.json(await paymentSettingsResponse());
 });
 
@@ -54,6 +90,9 @@ adminPaymentsRouter.get('/charges', async (req, res) => {
       totalCents: c.amountCents + c.holdCapturedCents,
       durationMinutes: Math.ceil(c.durationSeconds / 60),
       energyKwh: c.energyWh == null ? null : c.energyWh / 1000,
+      // Where the energy came from (METER_VALUES, STOP_TRANSACTION or NONE), and why a session needs review.
+      energySource: c.energySource,
+      energyNote: c.energyNote,
       status: c.status,
       provider: c.provider,
       providerRef: c.providerRef,

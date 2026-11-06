@@ -3,6 +3,7 @@ import { Container, Typography, Paper, Stack, TextField, Button, Alert, Divider 
 import { api } from '../api/client.js';
 import { MfaEnrollForm } from '../components/MfaEnrollForm.jsx';
 import { ChangePasswordForm } from '../components/ChangePasswordForm.jsx';
+import { AlertChoices } from '../components/AlertChoices.jsx';
 
 function TwoFactorSection({ me, onChanged }) {
   const [enrolling, setEnrolling] = useState(false);
@@ -114,6 +115,14 @@ export function AccountPage() {
         </Typography>
         <Divider sx={{ mb: 2 }} />
         <TwoFactorSection me={me} onChanged={refresh} />
+      </Paper>
+
+      <Paper variant="outlined" sx={{ p: 3, mb: 3 }}>
+        <Typography variant="subtitle1" fontWeight={600} gutterBottom>
+          Charge point alerts
+        </Typography>
+        <Divider sx={{ mb: 2 }} />
+        <AlertChoices />
       </Paper>
 
       {me.hasPassword && (

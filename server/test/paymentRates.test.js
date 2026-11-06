@@ -175,12 +175,12 @@ describe('payment settings: rates, price check and holds', () => {
     assert.equal(res.body.check.level, 'WARN');
     assert.ok(res.body.calculator.pricePerKwhCents > 0);
     const current = await admin('get', '/settings');
-    assert.equal(current.body.settings.pricingModel, 'TIME', 'the preview saved nothing');
+    assert.equal(current.body.settings.pricingModel, 'FREE', 'the preview saved nothing');
   });
 
   it('refuses card holds with Square, and with free charging', async () => {
     await setSiteSettings({ 'square.accessToken': 'EAAA', 'square.locationId': 'L1', 'square.webhookSignatureKey': 'k' });
-    const square = await admin('put', '/settings').send({ provider: 'SQUARE', preauthCents: 5000 });
+    const square = await admin('put', '/settings').send({ pricingModel: 'TIME', provider: 'SQUARE', preauthCents: 5000 });
     assert.equal(square.status, 400);
     assert.match(square.body.error, /Stripe or Braintree/);
 

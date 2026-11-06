@@ -245,7 +245,7 @@ export function AdminIntegrationsPage() {
   return (
     <Container maxWidth="md" sx={{ py: 4 }}>
       <Typography variant="h5" fontWeight={600} gutterBottom>
-        Integrations
+        Payment providers
       </Typography>
       <Typography color="text.secondary" sx={{ mb: 3 }}>
         Payment provider keys. Saved values take effect straight away, with no server restart needed. Keys are stored

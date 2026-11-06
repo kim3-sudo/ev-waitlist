@@ -1,6 +1,10 @@
 import { prisma, rawPrisma } from '../db.js';
 import { encryptSecret, decryptSecret, isEncryptionReady } from '../utils/secretBox.js';
 import { currentTenantId, DEFAULT_TENANT_ID } from '../tenancy/context.js';
+import { looksLikeEmail } from './contact.js';
+
+export const EMAIL_PROVIDERS = ['NONE', 'SMTP', 'SES', 'POSTMARK', 'SENDGRID'];
+export const SMS_PROVIDERS = ['NONE', 'TWILIO'];
 
 // Every per-site setting. `env` is the old variable name, read once to seed the
 // default site when no row exists yet. `kind` decides validation and storage:
@@ -32,6 +36,28 @@ export const SETTING_DEFS = {
   'square.webhookSignatureKey': { env: 'SQUARE_WEBHOOK_SIGNATURE_KEY', fallback: '', kind: 'secret', group: 'square' },
   // Optional: empty means "derive from the public URL and this site's path".
   'square.webhookUrl': { env: 'SQUARE_WEBHOOK_URL', fallback: '', kind: 'url', group: 'square', optional: true },
+
+  // Notification integrations. There are no environment variables for these: they are
+  // set in the admin pages only.
+  'email.provider': { env: null, fallback: 'NONE', kind: 'enum', values: EMAIL_PROVIDERS, group: 'email' },
+  'email.fromAddress': { env: null, fallback: '', kind: 'email', group: 'email' },
+  'email.fromName': { env: null, fallback: '', kind: 'text', group: 'email' },
+  'email.smtp.host': { env: null, fallback: '', kind: 'text', group: 'email' },
+  'email.smtp.port': { env: null, fallback: '587', kind: 'int', min: 1, max: 65535, group: 'email' },
+  'email.smtp.secure': { env: null, fallback: 'STARTTLS', kind: 'enum', values: ['STARTTLS', 'TLS', 'NONE'], group: 'email' },
+  'email.smtp.username': { env: null, fallback: '', kind: 'text', group: 'email' },
+  'email.smtp.password': { env: null, fallback: '', kind: 'secret', group: 'email' },
+  'email.ses.region': { env: null, fallback: '', kind: 'text', group: 'email' },
+  'email.ses.accessKeyId': { env: null, fallback: '', kind: 'text', group: 'email' },
+  'email.ses.secretAccessKey': { env: null, fallback: '', kind: 'secret', group: 'email' },
+  'email.postmark.serverToken': { env: null, fallback: '', kind: 'secret', group: 'email' },
+  'email.sendgrid.apiKey': { env: null, fallback: '', kind: 'secret', group: 'email' },
+
+  'sms.provider': { env: null, fallback: 'NONE', kind: 'enum', values: SMS_PROVIDERS, group: 'sms' },
+  'sms.twilio.accountSid': { env: null, fallback: '', kind: 'text', group: 'sms' },
+  'sms.twilio.authToken': { env: null, fallback: '', kind: 'secret', group: 'sms' },
+  // A Twilio phone number (+...), or a Messaging Service SID (starts with MG).
+  'sms.twilio.sender': { env: null, fallback: '', kind: 'text', group: 'sms' },
 };
 
 const SECRET_KINDS = new Set(['secret']);
@@ -39,7 +65,10 @@ const SECRET_KINDS = new Set(['secret']);
 function setPath(obj, path, value) {
   const parts = path.split('.');
   let target = obj;
-  for (const part of parts.slice(0, -1)) target = target[part];
+  for (const part of parts.slice(0, -1)) {
+    target[part] ??= {};
+    target = target[part];
+  }
   target[parts.at(-1)] = value;
 }
 
@@ -64,7 +93,7 @@ export function sitePathPrefix(slug) {
 // be decrypted (wrong or missing CONFIG_ENCRYPTION_KEY) load as empty and are
 // reported as unreadable.
 function buildSite(stored, slug) {
-  const config = { stripe: {}, braintree: {}, square: {} };
+  const config = { stripe: {}, braintree: {}, square: {}, email: {}, sms: {} };
   const unreadable = new Set();
   for (const [key, def] of Object.entries(SETTING_DEFS)) {
     const raw = stored.get(key);
@@ -138,7 +167,7 @@ export async function initRuntimeConfig() {
 
   for (const [key, def] of Object.entries(SETTING_DEFS)) {
     if (existing.has(key)) continue;
-    const fromEnv = process.env[def.env];
+    const fromEnv = def.env ? process.env[def.env] : undefined;
     if (fromEnv === undefined || fromEnv === '') continue;
     if (SECRET_KINDS.has(def.kind) && !isEncryptionReady()) {
       console.warn(`[config] ${def.env} is set but CONFIG_ENCRYPTION_KEY is missing, so it was not imported.`);
@@ -204,6 +233,9 @@ export function validateValue(key, input) {
     }
     case 'enum':
       if (!def.values.includes(text)) return { error: `${key} must be one of: ${def.values.join(', ')}` };
+      return { value: text };
+    case 'email':
+      if (!looksLikeEmail(text)) return { error: `${key} must be an e-mail address, such as no-reply@example.com` };
       return { value: text };
     default:
       return { value: text };

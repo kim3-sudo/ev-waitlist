@@ -1,7 +1,7 @@
 import { runWithTenant, DEFAULT_TENANT_ID } from '../../src/tenancy/context.js';
 import { saveRuntimeSettings } from '../../src/services/runtimeConfig.js';
 
-const ALL_GROUPS = ['system', 'stripe', 'braintree', 'square'];
+const ALL_GROUPS = ['system', 'stripe', 'braintree', 'square', 'email', 'sms'];
 
 // Saves per-site settings the same way the admin UI does, so tests exercise the
 // real path. Throws if a value is refused.

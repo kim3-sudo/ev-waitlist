@@ -18,6 +18,9 @@ const serverDir = path.join(rootDir, 'server');
 
 const SIM_CONNECTORS = 2;
 const DEFAULT_SIM_IDENTITY = 'SIM-001';
+// Where the simulator's control page listens (see server/src/simulator/chargePoint.js).
+const SIM_UI_PORT = Number(process.env.SIM_UI_PORT ?? 4100);
+const simulatorControlUrl = `http://127.0.0.1:${SIM_UI_PORT}`;
 
 // ---- arguments ------------------------------------------------------------
 
@@ -230,7 +233,8 @@ function printSummary() {
       `    Identity:    ${simulatorIdentity}`,
       `    Connectors:  ${SIM_CONNECTORS}`,
       `    OCPP URL:    ${ocppUrl}/${simulatorIdentity}`,
-      '    Commands:    available|preparing|charging|finishing|faulted <connectorId>, quit',
+      ...(SIM_UI_PORT > 0 ? [`    Control:     ${simulatorControlUrl}`] : []),
+      '    Commands:    available|preparing|charging|finishing|faulted <connectorId>, profile basic|full, quit',
     );
   }
 

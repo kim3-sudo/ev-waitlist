@@ -112,7 +112,7 @@ export function WaitlistStatusCard({ entryId, onLeave }) {
           <div>
             <Typography variant="subtitle2" color="text.secondary">
               {data.stationName}
-              {data.licensePlate && ` · ${data.licensePlate}`}
+              {data.licensePlate && ` · ${data.licensePlate}${data.plateRegion ? ` (${data.plateRegion})` : ''}`}
               {data.parkingPermit && ` · Permit ${data.parkingPermit}`}
             </Typography>
             <Typography variant="h6" sx={{ mt: 0.5 }}>

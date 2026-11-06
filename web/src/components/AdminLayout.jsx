@@ -1,24 +1,68 @@
 import { useEffect, useState } from 'react';
-import { Container, Tabs, Tab, Stack, TextField, MenuItem, Typography } from '@mui/material';
+import { Container, Stack, TextField, MenuItem, Typography } from '@mui/material';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
 import { api } from '../api/client.js';
+import { SectionDrawer } from './SectionDrawer.jsx';
 
-// Each tab shows when the signed-in role holds its permission. Sites are only
-// for the installation administrator.
-const TABS = [
-  { label: 'Charge points', path: '/admin', end: true, permission: 'stations.view' },
-  { label: 'Zones', path: '/admin/zones', permission: 'zones.view' },
-  { label: 'Complaints', path: '/admin/complaints', permission: 'complaints.view' },
-  { label: 'Payments', path: '/admin/payments', permission: 'payments.view' },
-  { label: 'Branding', path: '/admin/branding', permission: 'branding.manage' },
-  { label: 'Users', path: '/admin/users', permission: 'users.manage' },
-  { label: 'Single sign-on', path: '/admin/sso', permission: 'sso.manage' },
-  { label: 'Integrations', path: '/admin/integrations', permission: 'integrations.manage' },
-  { label: 'Roaming', path: '/admin/roaming', permission: 'roaming.manage' },
-  { label: 'Privacy', path: '/admin/privacy', permission: 'privacy.manage' },
-  { label: 'System', path: '/admin/system', permission: 'system.manage' },
-  { label: 'Sites', path: '/admin/sites', permission: 'sites.manage', instanceOnly: true },
+// Admin pages, grouped by what they configure. A section shows when the signed-in role
+// holds the permission for at least one of its pages. Sites are only for the
+// installation administrator.
+const SECTIONS = [
+  {
+    title: 'Charge points',
+    items: [
+      { label: 'Charge points', path: '/admin', end: true, permission: 'stations.view' },
+      { label: 'Zones', path: '/admin/zones', permission: 'zones.view' },
+    ],
+  },
+  {
+    title: 'Payments',
+    items: [
+      { label: 'Payment settings', path: '/admin/payments', permission: 'payments.view' },
+      { label: 'Payment providers', path: '/admin/integrations', permission: 'integrations.manage' },
+    ],
+  },
+  {
+    title: 'Users & groups',
+    items: [
+      { label: 'Users and roles', path: '/admin/users', permission: 'users.manage' },
+      { label: 'Single sign-on', path: '/admin/sso', permission: 'sso.manage' },
+    ],
+  },
+  {
+    title: 'Branding',
+    items: [{ label: 'Branding', path: '/admin/branding', permission: 'branding.manage' }],
+  },
+  {
+    title: 'Waitlist',
+    items: [
+      { label: 'Waitlist', path: '/admin/waitlist', permission: 'branding.manage' },
+      { label: 'Message templates', path: '/admin/templates', permission: 'branding.manage' },
+    ],
+  },
+  {
+    title: 'Notification integrations',
+    items: [
+      { label: 'E-mail server', path: '/admin/email', permission: 'integrations.manage' },
+      { label: 'SMS service', path: '/admin/sms', permission: 'integrations.manage' },
+    ],
+  },
+  {
+    title: 'Roaming',
+    items: [{ label: 'Roaming and partners', path: '/admin/roaming', permission: 'roaming.manage' }],
+  },
+  {
+    title: 'Privacy',
+    items: [{ label: 'Retention and erasure', path: '/admin/privacy', permission: 'privacy.manage' }],
+  },
+  {
+    title: 'System',
+    items: [
+      { label: 'System settings', path: '/admin/system', permission: 'system.manage' },
+      { label: 'Sites', path: '/admin/sites', permission: 'sites.manage', instanceOnly: true },
+    ],
+  },
 ];
 
 const DEFAULT_SLUG = 'default';
@@ -68,28 +112,23 @@ export function AdminLayout() {
   const navigate = useNavigate();
   const { can, isInstanceAdmin } = useAuth();
 
-  const visibleTabs = TABS.filter((tab) => can(tab.permission) && (!tab.instanceOnly || isInstanceAdmin));
-  const currentTab =
-    visibleTabs.find((tab) => (tab.end ? location.pathname === tab.path : location.pathname.startsWith(tab.path)))
-      ?.path ?? false;
+  const sections = SECTIONS.map((section) => ({
+    ...section,
+    items: section.items.filter((item) => can(item.permission) && (!item.instanceOnly || isInstanceAdmin)),
+  })).filter((section) => section.items.length > 0);
+
+  const currentPath =
+    sections
+      .flatMap((section) => section.items)
+      .find((item) => (item.end ? location.pathname === item.path : location.pathname.startsWith(item.path)))?.path ??
+    '';
 
   return (
-    <>
+    <SectionDrawer sections={sections} currentPath={currentPath} onNavigate={navigate} label="Admin settings">
       <Container maxWidth="lg" sx={{ pt: 2 }}>
         <SiteSwitcher />
-        <Tabs
-          value={currentTab}
-          onChange={(_, path) => navigate(path)}
-          variant="scrollable"
-          scrollButtons="auto"
-          sx={{ borderBottom: 1, borderColor: 'divider' }}
-        >
-          {visibleTabs.map((tab) => (
-            <Tab key={tab.path} label={tab.label} value={tab.path} />
-          ))}
-        </Tabs>
       </Container>
       <Outlet />
-    </>
+    </SectionDrawer>
   );
 }

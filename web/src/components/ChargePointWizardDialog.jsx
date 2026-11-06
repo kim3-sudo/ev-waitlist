@@ -15,6 +15,9 @@ import {
   Typography,
 } from '@mui/material';
 import { api } from '../api/client.js';
+import { ConnectorFields } from './ConnectorFields.jsx';
+import { ConnectionTest } from './ConnectionTest.jsx';
+import { CONNECTOR_FORMAT_OPTIONS, CONNECTOR_STANDARD_OPTIONS, POWER_TYPE_OPTIONS, optionFor } from '../connectorOptions.js';
 
 const STEPS = ['Identity', 'Location', 'Connectors', 'Review', 'Connect'];
 const REVIEW_STEP = 3;
@@ -36,7 +39,29 @@ const emptyForm = {
   model: '',
   zoneId: '',
   connectorCount: 1,
+  // Connector details keyed by connector number. Optional, but needed for roaming.
+  connectors: {},
 };
+
+// The connector list sent to the server: one entry per connector, blanks clear a detail.
+function connectorsPayload(count, details) {
+  return Array.from({ length: Number(count) || 0 }, (_, i) => i + 1).map((connectorId) => ({
+    connectorId,
+    ...(details[connectorId] ?? {}),
+  }));
+}
+
+// A one-line summary of a connector for the review step.
+function describeConnector(d = {}) {
+  const parts = [
+    optionFor(CONNECTOR_STANDARD_OPTIONS, d.standard)?.name,
+    optionFor(CONNECTOR_FORMAT_OPTIONS, d.format)?.name,
+    optionFor(POWER_TYPE_OPTIONS, d.powerType)?.name,
+    d.maxVoltage ? `${d.maxVoltage} V` : null,
+    d.maxAmperage ? `${d.maxAmperage} A` : null,
+  ].filter(Boolean);
+  return parts.length ? parts.join(', ') : 'Not set yet';
+}
 
 function ReviewRow({ label, value }) {
   return (
@@ -57,7 +82,7 @@ function ReviewRow({ label, value }) {
 // The wizard in a modal, used from the charge points page.
 export function ChargePointWizardDialog({ onClose, onCreated, onSwitchToForm }) {
   return (
-    <Dialog open onClose={onClose} fullWidth maxWidth="sm">
+    <Dialog open onClose={onClose} fullWidth maxWidth="md">
       <DialogTitle>Add charge point</DialogTitle>
       <DialogContent>
         <ChargePointWizard
@@ -116,6 +141,13 @@ export function ChargePointWizard({
     return (e) => setForm((f) => ({ ...f, [field]: e.target.value }));
   }
 
+  function updateConnector(connectorId, field, value) {
+    setForm((f) => ({
+      ...f,
+      connectors: { ...f.connectors, [connectorId]: { ...(f.connectors[connectorId] ?? {}), [field]: value } },
+    }));
+  }
+
   async function validateCurrentStep() {
     if (step === 0) {
       const identity = form.identity.trim();
@@ -159,6 +191,7 @@ export function ChargePointWizard({
         model: form.model.trim(),
         zoneId: form.zoneId,
         connectorCount: Number(form.connectorCount),
+        connectors: connectorsPayload(form.connectorCount, form.connectors),
       });
       setCreated(data);
       setStep(CONNECT_STEP);
@@ -253,6 +286,12 @@ export function ChargePointWizard({
                 required
                 sx={{ width: 180 }}
               />
+              <ConnectorFields
+                count={form.connectorCount}
+                details={form.connectors}
+                onChange={updateConnector}
+                intro="Add each connector's details now. Drivers see them on the waitlist, and roaming partners need them to find your charger. You can skip this and add them later."
+              />
             </>
           )}
 
@@ -268,6 +307,13 @@ export function ChargePointWizard({
                 <ReviewRow label="Vendor / model" value={[form.vendor.trim(), form.model.trim()].filter(Boolean).join(' ')} />
                 <ReviewRow label="Zone" value={form.zoneId ? zoneName : 'Standalone (no zone)'} />
                 <ReviewRow label="Connectors" value={String(form.connectorCount)} />
+                {connectorsPayload(form.connectorCount, form.connectors).map((c) => (
+                  <ReviewRow
+                    key={c.connectorId}
+                    label={`Connector ${c.connectorId}`}
+                    value={describeConnector(form.connectors[c.connectorId])}
+                  />
+                ))}
               </Stack>
             </>
           )}
@@ -296,6 +342,7 @@ export function ChargePointWizard({
                   it will show as Online here once it connects.
                 </Typography>
               )}
+              <ConnectionTest identity={created.identity} />
             </>
           )}
         </Stack>

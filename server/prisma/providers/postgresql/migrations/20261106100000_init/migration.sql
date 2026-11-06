@@ -35,6 +35,8 @@ CREATE TABLE "Admin" (
     "passwordHash" TEXT,
     "mfaSecret" TEXT,
     "mfaEnabled" BOOLEAN NOT NULL DEFAULT false,
+    "alertOnFault" BOOLEAN NOT NULL DEFAULT false,
+    "alertOffline" BOOLEAN NOT NULL DEFAULT false,
     "mustChangePassword" BOOLEAN NOT NULL DEFAULT false,
     "role" TEXT NOT NULL DEFAULT 'ADMIN',
     "instanceAdmin" BOOLEAN NOT NULL DEFAULT false,
@@ -51,6 +53,8 @@ CREATE TABLE "Settings" (
     "primaryColor" TEXT NOT NULL DEFAULT '#0d7a5f',
     "secondaryColor" TEXT NOT NULL DEFAULT '#1565c0',
     "fontFamily" TEXT,
+    "plateRegions" TEXT,
+    "defaultPlateRegion" TEXT,
     "identifierMode" TEXT NOT NULL DEFAULT 'LICENSE_PLATE',
     "mfaRequired" BOOLEAN NOT NULL DEFAULT false,
     "setupCompleted" BOOLEAN NOT NULL DEFAULT false,
@@ -93,6 +97,16 @@ CREATE TABLE "Station" (
     "location" TEXT,
     "latitude" DOUBLE PRECISION,
     "longitude" DOUBLE PRECISION,
+    "serialNumber" TEXT,
+    "firmwareVersion" TEXT,
+    "lastSeenAt" TIMESTAMP(3),
+    "offlineSince" TIMESTAMP(3),
+    "offlineAlertSent" BOOLEAN NOT NULL DEFAULT false,
+    "firmwareStatus" TEXT,
+    "diagnosticsStatus" TEXT,
+    "meterStatus" TEXT NOT NULL DEFAULT 'UNKNOWN',
+    "configurationJson" TEXT,
+    "configurationAt" TIMESTAMP(3),
     "zoneId" TEXT,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
@@ -112,6 +126,9 @@ CREATE TABLE "Connector" (
     "powerType" TEXT,
     "maxVoltage" INTEGER,
     "maxAmperage" INTEGER,
+    "info" TEXT,
+    "vendorErrorCode" TEXT,
+    "operative" BOOLEAN NOT NULL DEFAULT true,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
     CONSTRAINT "Connector_pkey" PRIMARY KEY ("id")
@@ -125,8 +142,10 @@ CREATE TABLE "QueueEntry" (
     "zoneId" TEXT,
     "name" TEXT NOT NULL,
     "contact" TEXT NOT NULL,
+    "smsNumber" TEXT,
     "idTag" TEXT NOT NULL,
     "licensePlate" TEXT,
+    "plateRegion" TEXT,
     "parkingPermit" TEXT,
     "status" TEXT NOT NULL DEFAULT 'WAITING',
     "position" INTEGER NOT NULL,
@@ -140,7 +159,10 @@ CREATE TABLE "QueueEntry" (
 CREATE TABLE "Reservation" (
     "id" TEXT NOT NULL,
     "tenantId" TEXT NOT NULL,
-    "queueEntryId" TEXT NOT NULL,
+    "queueEntryId" TEXT,
+    "idTag" TEXT,
+    "note" TEXT,
+    "createdByAdminId" TEXT,
     "stationId" TEXT NOT NULL,
     "connectorId" INTEGER NOT NULL,
     "ocppReservationId" INTEGER,
@@ -177,6 +199,7 @@ CREATE TABLE "Transaction" (
     "meterStop" INTEGER,
     "startedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "stoppedAt" TIMESTAMP(3),
+    "stopReason" TEXT,
     "partnerId" TEXT,
 
     CONSTRAINT "Transaction_pkey" PRIMARY KEY ("id")
@@ -192,6 +215,35 @@ CREATE TABLE "IdleEvent" (
     "endedAt" TIMESTAMP(3),
 
     CONSTRAINT "IdleEvent_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "MeterSample" (
+    "id" TEXT NOT NULL,
+    "tenantId" TEXT NOT NULL,
+    "stationId" TEXT NOT NULL,
+    "connectorId" INTEGER NOT NULL,
+    "ocppTransactionId" INTEGER,
+    "measurand" TEXT NOT NULL,
+    "context" TEXT,
+    "value" DOUBLE PRECISION NOT NULL,
+    "at" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "MeterSample_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "StationEvent" (
+    "id" TEXT NOT NULL,
+    "tenantId" TEXT NOT NULL,
+    "stationId" TEXT NOT NULL,
+    "connectorId" INTEGER,
+    "kind" TEXT NOT NULL,
+    "detail" TEXT NOT NULL,
+    "actorId" TEXT,
+    "at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "StationEvent_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -212,6 +264,7 @@ CREATE TABLE "PaymentSettings" (
     "tenantId" TEXT NOT NULL,
     "pricingModel" TEXT NOT NULL DEFAULT 'TIME',
     "currency" TEXT NOT NULL DEFAULT 'USD',
+    "timeBillingUnit" TEXT NOT NULL DEFAULT 'MINUTE',
     "ratePerMinuteCents" INTEGER NOT NULL DEFAULT 0,
     "peakRatePerMinuteCents" INTEGER,
     "peakStartHour" INTEGER,
@@ -221,6 +274,11 @@ CREATE TABLE "PaymentSettings" (
     "provider" TEXT NOT NULL DEFAULT 'NONE',
     "rateSchedule" TEXT,
     "referencePowerKw" DOUBLE PRECISION,
+    "meterSampleSeconds" INTEGER NOT NULL DEFAULT 60,
+    "meterToleranceWh" INTEGER NOT NULL DEFAULT 100,
+    "meterTolerancePct" INTEGER NOT NULL DEFAULT 5,
+    "meterMinSessionMinutes" INTEGER NOT NULL DEFAULT 2,
+    "meterMaxJumpWh" INTEGER NOT NULL DEFAULT 50000,
     "rateCalculatorInputs" TEXT,
     "preauthCents" INTEGER,
     "updatedAt" TIMESTAMP(3) NOT NULL,
@@ -238,11 +296,14 @@ CREATE TABLE "Charge" (
     "idTag" TEXT NOT NULL,
     "payerName" TEXT,
     "payerContact" TEXT,
+    "payerSmsNumber" TEXT,
     "pricingModel" TEXT NOT NULL,
     "currency" TEXT NOT NULL,
     "amountCents" INTEGER NOT NULL,
     "durationSeconds" INTEGER NOT NULL,
     "energyWh" INTEGER,
+    "energySource" TEXT,
+    "energyNote" TEXT,
     "status" TEXT NOT NULL DEFAULT 'PENDING',
     "provider" TEXT,
     "providerRef" TEXT,
@@ -337,6 +398,19 @@ CREATE TABLE "OcpiOutbox" (
     CONSTRAINT "OcpiOutbox_pkey" PRIMARY KEY ("id")
 );
 
+-- CreateTable
+CREATE TABLE "MessageTemplate" (
+    "id" TEXT NOT NULL,
+    "tenantId" TEXT NOT NULL,
+    "key" TEXT NOT NULL,
+    "subject" TEXT NOT NULL,
+    "body" TEXT NOT NULL,
+    "smsBody" TEXT,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "MessageTemplate_pkey" PRIMARY KEY ("id")
+);
+
 -- CreateIndex
 CREATE UNIQUE INDEX "Tenant_slug_key" ON "Tenant"("slug");
 
@@ -380,6 +454,21 @@ CREATE INDEX "IdleEvent_stationId_connectorId_endedAt_idx" ON "IdleEvent"("stati
 CREATE INDEX "IdleEvent_tenantId_idx" ON "IdleEvent"("tenantId");
 
 -- CreateIndex
+CREATE INDEX "MeterSample_stationId_ocppTransactionId_idx" ON "MeterSample"("stationId", "ocppTransactionId");
+
+-- CreateIndex
+CREATE INDEX "MeterSample_stationId_connectorId_measurand_at_idx" ON "MeterSample"("stationId", "connectorId", "measurand", "at");
+
+-- CreateIndex
+CREATE INDEX "MeterSample_tenantId_idx" ON "MeterSample"("tenantId");
+
+-- CreateIndex
+CREATE INDEX "StationEvent_stationId_at_idx" ON "StationEvent"("stationId", "at");
+
+-- CreateIndex
+CREATE INDEX "StationEvent_tenantId_idx" ON "StationEvent"("tenantId");
+
+-- CreateIndex
 CREATE UNIQUE INDEX "CustomRole_tenantId_name_key" ON "CustomRole"("tenantId", "name");
 
 -- CreateIndex
@@ -420,6 +509,12 @@ CREATE INDEX "OcpiOutbox_status_nextAttemptAt_idx" ON "OcpiOutbox"("status", "ne
 
 -- CreateIndex
 CREATE INDEX "OcpiOutbox_tenantId_idx" ON "OcpiOutbox"("tenantId");
+
+-- CreateIndex
+CREATE INDEX "MessageTemplate_tenantId_idx" ON "MessageTemplate"("tenantId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "MessageTemplate_tenantId_key_key" ON "MessageTemplate"("tenantId", "key");
 
 -- AddForeignKey
 ALTER TABLE "Admin" ADD CONSTRAINT "Admin_tenantId_fkey" FOREIGN KEY ("tenantId") REFERENCES "Tenant"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
@@ -482,6 +577,18 @@ ALTER TABLE "IdleEvent" ADD CONSTRAINT "IdleEvent_tenantId_fkey" FOREIGN KEY ("t
 ALTER TABLE "IdleEvent" ADD CONSTRAINT "IdleEvent_stationId_fkey" FOREIGN KEY ("stationId") REFERENCES "Station"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
+ALTER TABLE "MeterSample" ADD CONSTRAINT "MeterSample_tenantId_fkey" FOREIGN KEY ("tenantId") REFERENCES "Tenant"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "MeterSample" ADD CONSTRAINT "MeterSample_stationId_fkey" FOREIGN KEY ("stationId") REFERENCES "Station"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "StationEvent" ADD CONSTRAINT "StationEvent_tenantId_fkey" FOREIGN KEY ("tenantId") REFERENCES "Tenant"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "StationEvent" ADD CONSTRAINT "StationEvent_stationId_fkey" FOREIGN KEY ("stationId") REFERENCES "Station"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
 ALTER TABLE "CustomRole" ADD CONSTRAINT "CustomRole_tenantId_fkey" FOREIGN KEY ("tenantId") REFERENCES "Tenant"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
@@ -516,4 +623,7 @@ ALTER TABLE "OcpiOutbox" ADD CONSTRAINT "OcpiOutbox_tenantId_fkey" FOREIGN KEY (
 
 -- AddForeignKey
 ALTER TABLE "OcpiOutbox" ADD CONSTRAINT "OcpiOutbox_partnerId_fkey" FOREIGN KEY ("partnerId") REFERENCES "OcpiPartner"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "MessageTemplate" ADD CONSTRAINT "MessageTemplate_tenantId_fkey" FOREIGN KEY ("tenantId") REFERENCES "Tenant"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 

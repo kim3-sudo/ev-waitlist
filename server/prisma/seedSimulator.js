@@ -1,17 +1,27 @@
 import '../src/loadRootEnv.js';
 import { PrismaClient } from '@prisma/client';
+import { ensureDefaultTenant } from '../src/db.js';
+import { DEFAULT_TENANT_ID } from '../src/tenancy/context.js';
 
 // Creates (or fills in) a station for the charge point simulator so it can
-// connect. Safe to run repeatedly.
+// connect. The station goes in the default site. Safe to run repeatedly.
 //   node prisma/seedSimulator.js <identity> <connectorCount>
 const prisma = new PrismaClient();
 const identity = process.argv[2] ?? 'SIM-001';
 const connectorCount = Number(process.argv[3] ?? 2);
 
+await ensureDefaultTenant();
 let station = await prisma.station.findUnique({ where: { identity } });
 if (!station) {
   station = await prisma.station.create({
-    data: { identity, name: `Simulator ${identity}`, vendor: 'Simulator', model: 'OCPP 1.6J', location: 'Local' },
+    data: {
+      tenantId: DEFAULT_TENANT_ID,
+      identity,
+      name: `Simulator ${identity}`,
+      vendor: 'Simulator',
+      model: 'OCPP 1.6J',
+      location: 'Local',
+    },
   });
 }
 

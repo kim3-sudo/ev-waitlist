@@ -11,10 +11,11 @@ import {
   Tooltip,
 } from '@mui/material';
 import EditIcon from '@mui/icons-material/Edit';
+import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import DeleteIcon from '@mui/icons-material/Delete';
 import { ocppStatusLabel, ocppStatusDescription } from '../ocppStatus.js';
 
-export function StationsTable({ stations, onEdit, onDelete, readOnly = false }) {
+export function StationsTable({ stations, onEdit, onDelete, onStatus, readOnly = false }) {
   return (
     <Table>
       <TableHead>
@@ -25,7 +26,7 @@ export function StationsTable({ stations, onEdit, onDelete, readOnly = false }) 
           <TableCell>Zone</TableCell>
           <TableCell>Status</TableCell>
           <TableCell>Connectors</TableCell>
-          {!readOnly && <TableCell align="right">Actions</TableCell>}
+          {(!readOnly || onStatus) && <TableCell align="right">Actions</TableCell>}
         </TableRow>
       </TableHead>
       <TableBody>
@@ -40,11 +41,11 @@ export function StationsTable({ stations, onEdit, onDelete, readOnly = false }) 
             <TableCell>{station.location || '—'}</TableCell>
             <TableCell>{station.zoneName || '—'}</TableCell>
             <TableCell>
-              <Chip
-                size="small"
-                label={station.online ? 'Online' : 'Offline'}
-                color={station.online ? 'success' : 'default'}
-              />
+              <Stack direction="row" spacing={0.5} useFlexGap sx={{ flexWrap: 'wrap' }}>
+                <Chip size="small" label={station.online ? 'Online' : 'Offline'} color={station.online ? 'success' : 'default'} />
+                {station.faulted && <Chip size="small" color="error" label="Fault" />}
+                {station.meterStatus === 'NONE' && <Chip size="small" color="warning" variant="outlined" label="No meter" />}
+              </Stack>
             </TableCell>
             <TableCell>
               <Stack direction="row" spacing={0.5} useFlexGap sx={{ flexWrap: 'wrap' }}>
@@ -59,14 +60,23 @@ export function StationsTable({ stations, onEdit, onDelete, readOnly = false }) 
                 ))}
               </Stack>
             </TableCell>
-            {!readOnly && (
+            {(!readOnly || onStatus) && (
               <TableCell align="right">
-                <IconButton size="small" onClick={() => onEdit(station)} aria-label="Edit">
-                  <EditIcon fontSize="small" />
-                </IconButton>
-                <IconButton size="small" onClick={() => onDelete(station)} aria-label="Delete" color="error">
-                  <DeleteIcon fontSize="small" />
-                </IconButton>
+                {onStatus && (
+                  <IconButton size="small" onClick={() => onStatus(station)} aria-label="Status">
+                    <InfoOutlinedIcon fontSize="small" />
+                  </IconButton>
+                )}
+                {!readOnly && (
+                  <>
+                    <IconButton size="small" onClick={() => onEdit(station)} aria-label="Edit">
+                      <EditIcon fontSize="small" />
+                    </IconButton>
+                    <IconButton size="small" onClick={() => onDelete(station)} aria-label="Delete" color="error">
+                      <DeleteIcon fontSize="small" />
+                    </IconButton>
+                  </>
+                )}
               </TableCell>
             )}
           </TableRow>

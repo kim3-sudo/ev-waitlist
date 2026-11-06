@@ -18,6 +18,7 @@ function serializeEntry({ entry, position }) {
     zoneName: entry.zone?.name ?? null,
     name: entry.name,
     licensePlate: entry.licensePlate,
+    plateRegion: entry.plateRegion,
     parkingPermit: entry.parkingPermit,
     status: entry.status,
     position,

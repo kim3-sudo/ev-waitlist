@@ -9,8 +9,11 @@ import {
   highestPricePerKwhCents,
   priceCheck,
   DEFAULT_REFERENCE_POWER_KW,
+  DEFAULT_CALCULATOR_INPUTS,
   LEVEL_2_MAX_KW,
 } from './rateCheck.js';
+
+export const TIME_BILLING_UNITS = ['MINUTE', 'HOUR'];
 
 export const PAYMENT_PROVIDERS = ['NONE', 'STRIPE', 'BRAINTREE', 'SQUARE'];
 // Providers that can place a hold on a card and capture a different amount later.
@@ -22,7 +25,8 @@ export async function getPaymentSettings() {
   const tenantId = currentTenantId();
   const existing = await prisma.paymentSettings.findUnique({ where: { tenantId } });
   if (existing) return existing;
-  return prisma.paymentSettings.create({ data: { tenantId } });
+  // A new site starts free of charge, so nothing is billed until the admin chooses a price.
+  return prisma.paymentSettings.create({ data: { tenantId, pricingModel: 'FREE' } });
 }
 
 function isWholeNumber(value, { min = 0 } = {}) {
@@ -40,9 +44,14 @@ function parseJson(text) {
 
 // The price check for the settings as saved: the highest price a driver can pay,
 // against the cost from the calculator.
+// The calculator inputs in use: the saved ones, or the conservative defaults until the admin saves some.
+export function calculatorInputsOf(settings) {
+  return parseJson(settings.rateCalculatorInputs) ?? { ...DEFAULT_CALCULATOR_INPUTS };
+}
+
 export function priceCheckFor(settings) {
   const powerKw = settings.referencePowerKw ?? DEFAULT_REFERENCE_POWER_KW;
-  const calc = calculateRate(parseJson(settings.rateCalculatorInputs));
+  const calc = calculateRate(calculatorInputsOf(settings));
   return priceCheck({
     priceCentsPerKwh: highestPricePerKwhCents(settings, powerKw),
     costCentsPerKwh: calc?.costPerKwhCents ?? 0,
@@ -62,6 +71,10 @@ async function applyInput(input) {
   if (input.currency !== undefined) {
     if (!/^[A-Z]{3}$/.test(input.currency)) return { error: 'currency must be a 3-letter ISO code, e.g. USD' };
     next.currency = input.currency;
+  }
+  if (input.timeBillingUnit !== undefined) {
+    if (!TIME_BILLING_UNITS.includes(input.timeBillingUnit)) return { error: 'timeBillingUnit must be MINUTE or HOUR' };
+    next.timeBillingUnit = input.timeBillingUnit;
   }
   for (const key of ['ratePerMinuteCents', 'ratePerKwhCents']) {
     if (input[key] !== undefined) {
@@ -177,19 +190,36 @@ export async function previewRates(input) {
   const { next } = applied;
   return {
     check: priceCheckFor(next),
-    calculator: calculateRate(parseJson(next.rateCalculatorInputs)),
+    calculator: calculateRate(calculatorInputsOf(next)),
     schedule: scheduleFor(next),
   };
 }
 
+// Saves only the energy-cost calculator inputs. The admin page calls this as the admin
+// types, so it does not run the price confirmation, and it changes no price.
+export async function saveCalculatorInputs(input) {
+  const { inputs, error } = validateCalculatorInputs(input?.rateCalculatorInputs ?? null);
+  if (error) return { error };
+  const tenantId = currentTenantId();
+  const data = { rateCalculatorInputs: inputs == null ? null : JSON.stringify(inputs) };
+  const settings = await prisma.paymentSettings.upsert({
+    where: { tenantId },
+    create: { tenantId, pricingModel: 'FREE', ...data },
+    update: data,
+  });
+  return { calculatorInputs: calculatorInputsOf(settings), calculator: calculateRate(calculatorInputsOf(settings)), check: priceCheckFor(settings), savedAt: settings.updatedAt };
+}
+
 export async function paymentSettingsResponse() {
   const settings = await getPaymentSettings();
+  const inputs = calculatorInputsOf(settings);
   return {
     settings,
     providers: providerStatus(),
     schedule: scheduleFor(settings),
-    calculatorInputs: parseJson(settings.rateCalculatorInputs),
-    calculator: calculateRate(parseJson(settings.rateCalculatorInputs)),
+    calculatorInputs: inputs,
+    calculatorIsDefault: parseJson(settings.rateCalculatorInputs) == null,
+    calculator: calculateRate(inputs),
     check: priceCheckFor(settings),
   };
 }

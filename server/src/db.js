@@ -27,6 +27,9 @@ const TENANT_SCOPED_MODELS = new Set([
   'ocpiToken',
   'ocpiOutbox',
   'paymentHold',
+  'messageTemplate',
+  'meterSample',
+  'stationEvent',
 ]);
 
 // Operations that take a `where` (other than the finds, which are matched by prefix).

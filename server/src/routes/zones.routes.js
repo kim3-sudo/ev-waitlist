@@ -3,7 +3,8 @@ import { prisma } from '../db.js';
 import { registry } from '../services/stationRegistry.js';
 import { joinQueue } from '../services/queueService.js';
 import { tryDispatchZone } from '../services/dispatcher.js';
-import { getSettings, validateIdentifiers } from '../services/settingsService.js';
+import { getSettings, resolvePlateRegion, validateIdentifiers } from '../services/settingsService.js';
+import { contactProblem, smsChoice } from '../services/notifier.js';
 import { roamingWarningError } from '../services/roaming.js';
 
 export const zonesRouter = Router();
@@ -40,7 +41,11 @@ zonesRouter.get('/', async (req, res) => {
 });
 
 zonesRouter.post('/:id/waitlist', async (req, res) => {
-  const { name, contact, licensePlate, parkingPermit } = req.body ?? {};
+  const { name, contact, licensePlate, parkingPermit, plateRegion } = req.body ?? {};
+  const sms = smsChoice(req.body?.smsNumber);
+  if (sms.error) return res.status(400).json({ error: sms.error });
+  const contactError = contactProblem(contact);
+  if (contactError) return res.status(400).json({ error: contactError });
   if (!name || !contact) {
     return res.status(400).json({ error: 'name and contact are required' });
   }
@@ -50,6 +55,8 @@ zonesRouter.post('/:id/waitlist', async (req, res) => {
   if (identifierError) {
     return res.status(400).json({ error: identifierError });
   }
+  const regionResult = await resolvePlateRegion(plateRegion, Boolean(licensePlate?.trim()));
+  if (regionResult.error) return res.status(400).json({ error: regionResult.error });
 
   const zone = await prisma.zone.findUnique({ where: { id: req.params.id } });
   if (!zone) return res.status(404).json({ error: 'Zone not found' });
@@ -57,7 +64,10 @@ zonesRouter.post('/:id/waitlist', async (req, res) => {
   const roamingError = await roamingWarningError(req.body);
   if (roamingError) return res.status(roamingError.status).json(roamingError.body);
 
-  const entry = await joinQueue({ zoneId: zone.id }, { name, contact, licensePlate, parkingPermit });
+  const entry = await joinQueue(
+    { zoneId: zone.id },
+    { name, contact, smsNumber: sms.smsNumber, licensePlate, parkingPermit, plateRegion: regionResult.plateRegion },
+  );
 
   // In case a connector somewhere in the zone is already free right now,
   // don't make them wait for the next StatusNotification.

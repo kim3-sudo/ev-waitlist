@@ -121,7 +121,7 @@ export function AdminZonesPage() {
       </Stack>
       <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
         Group charge points that share one waitlist -- whichever charger in a zone frees up first is offered to the
-        next person in that zone's line. Assign charge points to a zone from the Charge points tab.
+        next person in that zone's line. Assign charge points to a zone from the Charge points page.
       </Typography>
 
       {error && (

@@ -10,17 +10,23 @@ import {
   Stack,
   Alert,
   Typography,
+  Divider,
 } from '@mui/material';
 import { api } from '../api/client.js';
+import { ConnectorFields } from './ConnectorFields.jsx';
+import { ConnectionTest } from './ConnectionTest.jsx';
 
-// The connector standards offered in the form: a common subset of the values the server accepts.
-const CONNECTOR_STANDARDS = [
-  'IEC_62196_T2', 'IEC_62196_T2_COMBO', 'IEC_62196_T1', 'IEC_62196_T1_COMBO', 'IEC_62196_T3A', 'IEC_62196_T3C',
-  'CHADEMO', 'TESLA_R', 'TESLA_S', 'DOMESTIC_F', 'DOMESTIC_E', 'DOMESTIC_G',
-];
-const POWER_TYPES = ['AC_1_PHASE', 'AC_2_PHASE', 'AC_2_PHASE_SPLIT', 'AC_3_PHASE', 'DC'];
-
-const emptyForm = { identity: '', name: '', vendor: '', model: '', location: '', latitude: '', longitude: '', connectorCount: 1, zoneId: '' };
+const emptyForm = {
+  identity: '',
+  name: '',
+  vendor: '',
+  model: '',
+  location: '',
+  latitude: '',
+  longitude: '',
+  connectorCount: 1,
+  zoneId: '',
+};
 
 export function StationFormDialog({ station, onClose, onSaved }) {
   const isEdit = Boolean(station);
@@ -42,7 +48,7 @@ export function StationFormDialog({ station, onClose, onSaved }) {
   const [zones, setZones] = useState([]);
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
-  // Connector details for roaming, keyed by connector number.
+  // Connector details, keyed by connector number. Needed for roaming, and shown to drivers.
   const [details, setDetails] = useState(() => {
     const out = {};
     for (const c of station?.connectors ?? []) {
@@ -103,23 +109,29 @@ export function StationFormDialog({ station, onClose, onSaved }) {
   }
 
   return (
-    <Dialog open onClose={onClose} fullWidth maxWidth="xs">
+    <Dialog open onClose={onClose} fullWidth maxWidth="md">
       <DialogTitle>{isEdit ? 'Edit charge point' : 'Add charge point'}</DialogTitle>
       <form onSubmit={handleSubmit}>
         <DialogContent>
           <Stack spacing={2} sx={{ mt: 1 }}>
             {error && <Alert severity="error">{error}</Alert>}
-            <TextField
-              label="OCPP identity"
-              helperText="Must match the ID the charge point connects with (ws://…/ocpp/<identity>)"
-              value={form.identity}
-              onChange={update('identity')}
-              required
-              fullWidth
-            />
-            <TextField label="Display name" value={form.name} onChange={update('name')} required fullWidth />
+            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
+              <TextField
+                label="OCPP identity"
+                helperText="Must match the ID the charge point connects with (ws://…/ocpp/<identity>)"
+                value={form.identity}
+                onChange={update('identity')}
+                required
+                fullWidth
+              />
+              <TextField label="Display name" value={form.name} onChange={update('name')} required fullWidth />
+            </Stack>
+            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
+              <TextField label="Vendor" value={form.vendor} onChange={update('vendor')} fullWidth />
+              <TextField label="Model" value={form.model} onChange={update('model')} fullWidth />
+            </Stack>
             <TextField label="Location" value={form.location} onChange={update('location')} fullWidth />
-            <Stack direction="row" spacing={2}>
+            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
               <TextField
                 label="Latitude"
                 helperText="Needed to show this station to roaming partners"
@@ -129,48 +141,6 @@ export function StationFormDialog({ station, onClose, onSaved }) {
               />
               <TextField label="Longitude" value={form.longitude} onChange={update('longitude')} fullWidth />
             </Stack>
-            <Stack direction="row" spacing={2}>
-              {Number(form.connectorCount) > 0 && (
-              <Stack spacing={1}>
-                <Typography variant="subtitle2">Connector details (needed for roaming)</Typography>
-                {Array.from({ length: Number(form.connectorCount) || 0 }, (_, i) => i + 1).map((id) => {
-                  const d = details[id] ?? {};
-                  return (
-                    <Stack key={id} direction="row" spacing={1} useFlexGap sx={{ flexWrap: 'wrap' }}>
-                      <Typography variant="body2" sx={{ alignSelf: 'center', minWidth: 80 }}>
-                        Connector {id}
-                      </Typography>
-                      <TextField select size="small" label="Standard" value={d.standard ?? ''} onChange={(e) => updateDetail(id, 'standard', e.target.value)} sx={{ minWidth: 180 }}>
-                        <MenuItem value="">Not set</MenuItem>
-                        {CONNECTOR_STANDARDS.map((v) => <MenuItem key={v} value={v}>{v}</MenuItem>)}
-                      </TextField>
-                      <TextField select size="small" label="Format" value={d.format ?? ''} onChange={(e) => updateDetail(id, 'format', e.target.value)} sx={{ minWidth: 110 }}>
-                        <MenuItem value="">Not set</MenuItem>
-                        <MenuItem value="CABLE">CABLE</MenuItem>
-                        <MenuItem value="SOCKET">SOCKET</MenuItem>
-                      </TextField>
-                      <TextField select size="small" label="Power" value={d.powerType ?? ''} onChange={(e) => updateDetail(id, 'powerType', e.target.value)} sx={{ minWidth: 140 }}>
-                        <MenuItem value="">Not set</MenuItem>
-                        {POWER_TYPES.map((v) => <MenuItem key={v} value={v}>{v}</MenuItem>)}
-                      </TextField>
-                      <TextField size="small" label="Volts" type="number" value={d.maxVoltage ?? ''} onChange={(e) => updateDetail(id, 'maxVoltage', e.target.value)} sx={{ width: 100 }} />
-                      <TextField size="small" label="Amps" type="number" value={d.maxAmperage ?? ''} onChange={(e) => updateDetail(id, 'maxAmperage', e.target.value)} sx={{ width: 100 }} />
-                    </Stack>
-                  );
-                })}
-              </Stack>
-              )}
-              <TextField label="Vendor" value={form.vendor} onChange={update('vendor')} fullWidth />
-              <TextField label="Model" value={form.model} onChange={update('model')} fullWidth />
-            </Stack>
-            <TextField
-              label="Connector count"
-              type="number"
-              slotProps={{ htmlInput: { min: 0 } }}
-              value={form.connectorCount}
-              onChange={update('connectorCount')}
-              fullWidth
-            />
             <TextField
               select
               label="Zone"
@@ -186,6 +156,37 @@ export function StationFormDialog({ station, onClose, onSaved }) {
                 </MenuItem>
               ))}
             </TextField>
+
+            <Divider />
+
+            <Typography variant="subtitle1" fontWeight={600}>
+              Connectors
+            </Typography>
+            <TextField
+              label="Connector count"
+              type="number"
+              slotProps={{ htmlInput: { min: 0 } }}
+              value={form.connectorCount}
+              onChange={update('connectorCount')}
+              sx={{ maxWidth: 220 }}
+            />
+            <ConnectorFields
+              count={form.connectorCount}
+              details={details}
+              onChange={updateDetail}
+              intro="Fill in each connector's details. Drivers see them on the waitlist, and roaming partners need them to find your charger."
+            />
+
+            <Divider />
+
+            <Typography variant="subtitle1" fontWeight={600}>
+              Connection
+            </Typography>
+            <ConnectionTest
+              identity={isEdit ? station.identity : ''}
+              disabled={!isEdit}
+              disabledReason="Save the charge point first. Then open it again to test the connection."
+            />
           </Stack>
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2 }}>

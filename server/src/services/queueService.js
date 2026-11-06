@@ -3,7 +3,7 @@ import { generateIdTag } from '../utils/idTag.js';
 
 // Joins either a single station's waitlist ({ stationId }) or a zone's
 // shared waitlist ({ zoneId }) -- exactly one should be passed.
-export async function joinQueue({ stationId, zoneId }, { name, contact, licensePlate, parkingPermit }) {
+export async function joinQueue({ stationId, zoneId }, { name, contact, smsNumber, licensePlate, parkingPermit, plateRegion }) {
   const scope = zoneId ? { zoneId } : { stationId };
   return prisma.$transaction(async (tx) => {
     const agg = await tx.queueEntry.aggregate({
@@ -18,7 +18,9 @@ export async function joinQueue({ stationId, zoneId }, { name, contact, licenseP
         zoneId: zoneId ?? null,
         name,
         contact,
+        smsNumber: smsNumber || null,
         licensePlate: licensePlate || null,
+        plateRegion: licensePlate ? plateRegion || null : null,
         parkingPermit: parkingPermit || null,
         position,
         idTag: generateIdTag(),

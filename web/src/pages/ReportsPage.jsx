@@ -1,30 +1,37 @@
-import { Container, Tabs, Tab, Typography } from '@mui/material';
+import { Container, Typography } from '@mui/material';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { SectionDrawer } from '../components/SectionDrawer.jsx';
 
-const TABS = [
-  { label: 'Idle after charging', path: '/reports/idle' },
-  { label: 'Complaints summary', path: '/reports/complaints' },
+// Reports, grouped by what they cover. Each page is its own route under /reports.
+const SECTIONS = [
+  {
+    title: 'Charging',
+    items: [
+      { label: 'Usage and idle time', path: '/reports/usage' },
+      { label: 'Energy dispensed', path: '/reports/energy' },
+      { label: 'Idle after charging', path: '/reports/idle' },
+    ],
+  },
+  {
+    title: 'Complaints',
+    items: [{ label: 'Line-cutting complaints', path: '/reports/complaints' }],
+  },
 ];
 
-// Aggregate reports. Each tab is its own page under /reports.
 export function ReportsPage() {
   const location = useLocation();
   const navigate = useNavigate();
-  const currentTab = TABS.find((tab) => location.pathname.startsWith(tab.path))?.path ?? false;
+  const currentPath =
+    SECTIONS.flatMap((section) => section.items).find((item) => location.pathname.startsWith(item.path))?.path ?? '';
 
   return (
-    <>
+    <SectionDrawer sections={SECTIONS} currentPath={currentPath} onNavigate={navigate} label="Reports">
       <Container maxWidth="lg" sx={{ pt: 4 }}>
-        <Typography variant="h5" fontWeight={600} sx={{ mb: 2 }}>
+        <Typography variant="h5" fontWeight={600}>
           Reports
         </Typography>
-        <Tabs value={currentTab} onChange={(_, path) => navigate(path)} sx={{ borderBottom: 1, borderColor: 'divider' }}>
-          {TABS.map((tab) => (
-            <Tab key={tab.path} label={tab.label} value={tab.path} />
-          ))}
-        </Tabs>
       </Container>
       <Outlet />
-    </>
+    </SectionDrawer>
   );
 }

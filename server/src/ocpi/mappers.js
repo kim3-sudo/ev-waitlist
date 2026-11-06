@@ -165,15 +165,19 @@ export function tariffOf(operator, settings, lastUpdated = new Date()) {
   } else {
     // Each time window becomes one or more restricted elements. The base rate comes
     // last, because OCPI applies the first element whose restrictions match.
-    const hourly = (cents) => ocpiDecimal((cents * 60) / 100);
+    // Rates are cents per minute or per hour, depending on the billing unit. Prices are
+    // sent per hour, with the billing step in seconds, so the partner bills the same way.
+    const perHour = settings.timeBillingUnit === 'HOUR';
+    const stepSize = perHour ? 3600 : 60;
+    const hourly = (cents) => ocpiDecimal(perHour ? cents / 100 : (cents * 60) / 100);
     const free = settings.pricingModel === 'FREE';
     for (const window of free ? [] : scheduleFor(settings)) {
       for (const restrictions of restrictionsOf(window)) {
-        elements.push({ price_components: [{ type: 'TIME', price: hourly(window.rate), step_size: 60 }], restrictions });
+        elements.push({ price_components: [{ type: 'TIME', price: hourly(window.rate), step_size: stepSize }], restrictions });
       }
     }
     elements.push({
-      price_components: [{ type: 'TIME', price: hourly(free ? 0 : settings.ratePerMinuteCents), step_size: 60 }],
+      price_components: [{ type: 'TIME', price: hourly(free ? 0 : settings.ratePerMinuteCents), step_size: stepSize }],
     });
   }
   return {

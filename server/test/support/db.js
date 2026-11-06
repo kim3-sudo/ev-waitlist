@@ -13,6 +13,8 @@ export async function resetDb() {
     prisma.charge.deleteMany(),
     prisma.paymentHold.deleteMany(),
     prisma.idleEvent.deleteMany(),
+    prisma.meterSample.deleteMany(),
+    prisma.stationEvent.deleteMany(),
     prisma.lineCuttingComplaint.deleteMany(),
     prisma.reservation.deleteMany(),
     prisma.transaction.deleteMany(),
@@ -26,6 +28,7 @@ export async function resetDb() {
     prisma.customRole.deleteMany(),
     prisma.paymentSettings.deleteMany(),
     prisma.configValue.deleteMany(),
+    prisma.messageTemplate.deleteMany(),
   ]);
   // Remove any extra sites, then make sure the default site exists again.
   await prisma.tenant.deleteMany({ where: { id: { not: DEFAULT_TENANT_ID } } });

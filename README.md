@@ -24,6 +24,15 @@ To also run a charge point simulator (station `SIM-001`, 2 connectors) alongside
 npm start -- --simulator
 ```
 
+The simulator also has a control page at http://127.0.0.1:4100 (set `SIM_UI_PORT` to change the port, or `0` to turn it off). From there you can set each connector's status, start and stop sessions, and see every message exchanged with the central system.
+
+The simulator acts as one of two EVSEs, chosen on the control page (or with `SIM_EVSE_PROFILE=basic` or `full` before starting):
+
+- **Basic EVSE** answers the OCPP 1.6J Core profile, the minimum every charge point supports. Status changes are made by hand, and no meter values are sent.
+- **Full-featured EVSE** also answers the Reservation, Smart Charging, Local Auth List, Firmware Management and Remote Trigger profiles. It sends meter values while charging, moves connectors through Charging and Finishing on its own, and reports faults with error codes.
+
+Messages outside the chosen profile get a NotSupported reply. The OCPP 1.6J reference is at https://ocpp.md/ocpp-1.6j/.
+
 Or run the servers in separate terminals with `npm run dev:server` and `npm run dev:web`.
 
 ## To Start Test EVSE

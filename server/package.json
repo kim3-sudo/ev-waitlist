@@ -18,6 +18,7 @@
     "test": "node --import ./test/env.setup.js --test --test-concurrency=1 test/*.test.js"
   },
   "dependencies": {
+    "@aws-sdk/client-sesv2": "3.1156.0",
     "@node-saml/node-saml": "^5.1.0",
     "@prisma/client": "5.20.0",
     "bcryptjs": "^3.0.3",
@@ -26,6 +27,7 @@
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "jsonwebtoken": "^9.0.3",
+    "nodemailer": "10.2.1",
     "ocpp-rpc": "^2.2.1",
     "otplib": "^12.0.1",
     "qrcode": "^1.5.4",

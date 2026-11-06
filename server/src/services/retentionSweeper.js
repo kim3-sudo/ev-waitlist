@@ -20,7 +20,7 @@ export async function sweepRetention(now = new Date()) {
   const queueCutoff = new Date(now.getTime() - tenant.queueRetentionDays * DAY_MS);
   const queue = await prisma.queueEntry.updateMany({
     where: { status: { in: CLOSED_STATUSES }, closedAt: { lt: queueCutoff }, contact: { not: '' } },
-    data: { name: '', contact: '', licensePlate: null, parkingPermit: null },
+    data: { name: '', contact: '', smsNumber: null, licensePlate: null, plateRegion: null, parkingPermit: null },
   });
 
   // Complaints: the free-text note goes once the complaint has been resolved or
@@ -30,6 +30,11 @@ export async function sweepRetention(now = new Date()) {
     data: { note: null },
   });
 
+  // Meter readings and station history are operational records, but readings can identify
+  // what a driver did when, so they are deleted on the queue period too.
+  const readings = await prisma.meterSample.deleteMany({ where: { at: { lt: queueCutoff } } });
+  const history = await prisma.stationEvent.deleteMany({ where: { at: { lt: queueCutoff } } });
+
   // Charges: payer details go after the financial period. Null means keep them.
   let charges = { count: 0 };
   let holds = { count: 0 };
@@ -38,9 +43,9 @@ export async function sweepRetention(now = new Date()) {
     charges = await prisma.charge.updateMany({
       where: {
         createdAt: { lt: financialCutoff },
-        OR: [{ payerName: { not: null } }, { payerContact: { not: null } }],
+        OR: [{ payerName: { not: null } }, { payerContact: { not: null } }, { payerSmsNumber: { not: null } }],
       },
-      data: { payerName: null, payerContact: null },
+      data: { payerName: null, payerContact: null, payerSmsNumber: null },
     });
     // Card holds are financial records too, so their payer details follow the same period.
     holds = await prisma.paymentHold.updateMany({
@@ -52,7 +57,14 @@ export async function sweepRetention(now = new Date()) {
     });
   }
 
-  return { queueEntries: queue.count, complaints: complaints.count, charges: charges.count, holds: holds.count };
+  return {
+    queueEntries: queue.count,
+    complaints: complaints.count,
+    charges: charges.count,
+    holds: holds.count,
+    meterSamples: readings.count,
+    stationEvents: history.count,
+  };
 }
 
 // Runs the retention sweep for every site.

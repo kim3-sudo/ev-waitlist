@@ -91,7 +91,7 @@ export function AdminSystemPage() {
             {publicUrlChanged && (
               <Alert severity="warning">
                 Changing this breaks single sign-on until you update the identity provider's settings to match. Square's
-                webhook URL also changes unless you set one explicitly under Integrations.
+                webhook URL also changes unless you set one explicitly under Payment providers.
               </Alert>
             )}
 
