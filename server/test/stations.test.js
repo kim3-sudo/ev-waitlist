@@ -55,6 +55,26 @@ describe('/api/admin/stations', () => {
     assert.equal(res.body.connectors.length, 3);
   });
 
+  it('refuses a power type that the connector standard cannot carry', async () => {
+    const station = await createStation({ connectorCount: 1 });
+    const put = (connector) =>
+      authed(request(app).put(`/api/admin/stations/${station.id}`)).send({ connectors: [{ connectorId: 1, ...connector }] });
+
+    // J1772 cannot carry three-phase AC or DC.
+    assert.equal((await put({ standard: 'IEC_62196_T1', powerType: 'AC_3_PHASE' })).status, 400);
+    assert.equal((await put({ standard: 'IEC_62196_T1', powerType: 'DC' })).status, 400);
+    // Type 2 carries three-phase; CHAdeMO is DC only.
+    assert.equal((await put({ standard: 'IEC_62196_T2', powerType: 'AC_3_PHASE' })).status, 200);
+    assert.equal((await put({ standard: 'CHADEMO', powerType: 'AC_1_PHASE' })).status, 400);
+    assert.equal((await put({ standard: 'CHADEMO', powerType: 'DC' })).status, 200);
+  });
+
+  it('keeps the server and web power type tables in step', async () => {
+    const { CONNECTOR_POWER_TYPES } = await import('../../web/src/connectorOptions.js');
+    const { CONNECTOR_POWER_TYPES: serverTable } = await import('../src/ocpi/mappers.js');
+    assert.deepEqual(serverTable, CONNECTOR_POWER_TYPES);
+  });
+
   it('deletes a station', async () => {
     const station = await createStation();
     const res = await authed(request(app).delete(`/api/admin/stations/${station.id}`));

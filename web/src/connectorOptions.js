@@ -37,13 +37,75 @@ export const CONNECTOR_FORMAT_OPTIONS = [
   { value: 'SOCKET', name: 'Socket', aliases: ['The driver brings their own cable'] },
 ];
 
+// `help` is shown under the field when the option is selected. North American voltages
+// are given first, with European ones where they differ.
 export const POWER_TYPE_OPTIONS = [
-  { value: 'AC_1_PHASE', name: 'AC single-phase', aliases: [] },
-  { value: 'AC_2_PHASE', name: 'AC two-phase', aliases: [] },
-  { value: 'AC_2_PHASE_SPLIT', name: 'AC split-phase', aliases: [] },
-  { value: 'AC_3_PHASE', name: 'AC three-phase', aliases: [] },
-  { value: 'DC', name: 'DC', aliases: ['Rapid and fast charging'] },
+  {
+    value: 'AC_1_PHASE',
+    name: 'AC single-phase',
+    aliases: [],
+    help: 'One live wire and a neutral. In North America, 120 V from the live wire to neutral; in Europe, about 230 V. Most home and small workplace chargers use this.',
+  },
+  {
+    value: 'AC_2_PHASE',
+    name: 'AC two-phase',
+    aliases: [],
+    help: 'Two of the three live wires from a three-phase supply, plus a neutral. In North America, each wire measures 120 V to neutral and 208 V between the two wires. Used in three-phase buildings where the charger takes two of the three wires.',
+  },
+  {
+    value: 'AC_2_PHASE_SPLIT',
+    name: 'AC split-phase',
+    aliases: [],
+    help: 'Two live wires that are half a cycle apart, with a centre-tapped neutral. In North America, each wire measures 120 V to neutral and 240 V between the two wires. Common for 240 V chargers in North American homes and small buildings.',
+  },
+  {
+    value: 'AC_3_PHASE',
+    name: 'AC three-phase',
+    aliases: [],
+    help: 'Three live wires plus a neutral. In North America, 208 V between wires (120 V to neutral); in Europe, about 400 V. Used by larger workplace and fleet chargers. Only Mennekes (Type 2) plugs carry it, and CCS2 includes one.',
+  },
+  {
+    value: 'DC',
+    name: 'DC',
+    aliases: ['Rapid and fast charging'],
+    help: 'Direct current. The charger converts the power itself and feeds the battery directly, so it charges much faster than AC. Needs a DC connector: CCS1, CCS2, CHAdeMO, or the Tesla connector.',
+  },
 ];
+
+// Which power types each connector standard can carry. A standard that is not listed
+// here accepts every power type. The rules follow each plug's pins: a plug without
+// the three-phase pins cannot carry AC three-phase, and a plug without DC pins cannot
+// carry DC. The server enforces the same table (server/src/ocpi/mappers.js).
+const AC_SINGLE_TWO_SPLIT = ['AC_1_PHASE', 'AC_2_PHASE', 'AC_2_PHASE_SPLIT'];
+const AC_ALL = [...AC_SINGLE_TWO_SPLIT, 'AC_3_PHASE'];
+const AC_SINGLE_ONLY = ['AC_1_PHASE'];
+export const CONNECTOR_POWER_TYPES = {
+  IEC_62196_T1: AC_SINGLE_TWO_SPLIT,
+  IEC_62196_T1_COMBO: [...AC_SINGLE_TWO_SPLIT, 'DC'],
+  IEC_62196_T2: AC_ALL,
+  IEC_62196_T2_COMBO: [...AC_ALL, 'DC'],
+  IEC_62196_T3A: AC_SINGLE_ONLY,
+  IEC_62196_T3C: AC_SINGLE_ONLY,
+  CHADEMO: ['DC'],
+  TESLA_S: ['AC_1_PHASE', 'AC_2_PHASE_SPLIT', 'DC'],
+  TESLA_R: AC_ALL,
+  DOMESTIC_A: AC_SINGLE_ONLY,
+  DOMESTIC_B: AC_SINGLE_ONLY,
+  DOMESTIC_C: AC_SINGLE_ONLY,
+  DOMESTIC_D: AC_SINGLE_ONLY,
+  DOMESTIC_E: AC_SINGLE_ONLY,
+  DOMESTIC_F: AC_SINGLE_ONLY,
+  DOMESTIC_G: AC_SINGLE_ONLY,
+  DOMESTIC_H: AC_SINGLE_ONLY,
+  DOMESTIC_I: AC_SINGLE_ONLY,
+  DOMESTIC_J: AC_SINGLE_ONLY,
+  DOMESTIC_K: AC_SINGLE_ONLY,
+  DOMESTIC_L: AC_SINGLE_ONLY,
+};
+
+export function allowedPowerTypes(standard) {
+  return CONNECTOR_POWER_TYPES[standard] ?? POWER_TYPE_OPTIONS.map((o) => o.value);
+}
 
 export function optionFor(options, value) {
   return options.find((o) => o.value === value);

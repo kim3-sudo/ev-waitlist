@@ -22,6 +22,41 @@ export const CONNECTOR_STANDARDS = [
 export const CONNECTOR_FORMATS = ['CABLE', 'SOCKET'];
 export const POWER_TYPES = ['AC_1_PHASE', 'AC_2_PHASE', 'AC_2_PHASE_SPLIT', 'AC_3_PHASE', 'DC'];
 
+// Which power types each connector standard can carry. Standards not listed accept any
+// power type. This mirrors web/src/connectorOptions.js, which greys out the same choices.
+const AC_SINGLE_TWO_SPLIT = ['AC_1_PHASE', 'AC_2_PHASE', 'AC_2_PHASE_SPLIT'];
+const AC_ALL = [...AC_SINGLE_TWO_SPLIT, 'AC_3_PHASE'];
+const AC_SINGLE_ONLY = ['AC_1_PHASE'];
+export const CONNECTOR_POWER_TYPES = {
+  IEC_62196_T1: AC_SINGLE_TWO_SPLIT,
+  IEC_62196_T1_COMBO: [...AC_SINGLE_TWO_SPLIT, 'DC'],
+  IEC_62196_T2: AC_ALL,
+  IEC_62196_T2_COMBO: [...AC_ALL, 'DC'],
+  IEC_62196_T3A: AC_SINGLE_ONLY,
+  IEC_62196_T3C: AC_SINGLE_ONLY,
+  CHADEMO: ['DC'],
+  TESLA_S: ['AC_1_PHASE', 'AC_2_PHASE_SPLIT', 'DC'],
+  TESLA_R: AC_ALL,
+  DOMESTIC_A: AC_SINGLE_ONLY,
+  DOMESTIC_B: AC_SINGLE_ONLY,
+  DOMESTIC_C: AC_SINGLE_ONLY,
+  DOMESTIC_D: AC_SINGLE_ONLY,
+  DOMESTIC_E: AC_SINGLE_ONLY,
+  DOMESTIC_F: AC_SINGLE_ONLY,
+  DOMESTIC_G: AC_SINGLE_ONLY,
+  DOMESTIC_H: AC_SINGLE_ONLY,
+  DOMESTIC_I: AC_SINGLE_ONLY,
+  DOMESTIC_J: AC_SINGLE_ONLY,
+  DOMESTIC_K: AC_SINGLE_ONLY,
+  DOMESTIC_L: AC_SINGLE_ONLY,
+};
+
+// True when the standard can carry the power type (or the standard has no rule).
+export function powerTypeAllowed(standard, powerType) {
+  const allowed = CONNECTOR_POWER_TYPES[standard];
+  return !allowed || allowed.includes(powerType);
+}
+
 // True when a connector has every detail partners need.
 export function connectorIsComplete(c) {
   return Boolean(

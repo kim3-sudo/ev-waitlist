@@ -1,4 +1,4 @@
-import { Alert, Box, Typography } from '@mui/material';
+import { Alert, Box, Table, TableBody, TableCell, TableHead, TableRow, Typography } from '@mui/material';
 import { Link as RouterLink } from 'react-router-dom';
 
 // Help articles. `permission` (optional) is the permission key a role needs to see
@@ -22,7 +22,7 @@ export const HELP_SECTIONS = [
   { title: 'Getting started', ids: ['your-role', 'your-profile'] },
   {
     title: 'Charge points',
-    ids: ['view-charge-points', 'add-charge-point', 'test-connection', 'update-charge-point', 'remove-charge-point', 'charge-point-status'],
+    ids: ['view-charge-points', 'add-charge-point', 'connector-power-types', 'test-connection', 'update-charge-point', 'remove-charge-point', 'charge-point-status'],
   },
   {
     title: 'Waitlist and drivers',
@@ -136,7 +136,8 @@ export const HELP_ARTICLES = [
           <li>
             On <strong>Connectors</strong>, set the number of plugs on the charger. Then fill in each connector's details:
             the standard, format, power type, and maximum volts and amps. Drivers see these on the waitlist, and roaming
-            partners need them to find your charger. You can skip them now and add them later.
+            partners need them to find your charger. You can skip them now and add them later. If you're not sure which
+            power type to choose, see <RouterLink to="/help/connector-power-types">Choosing a power type</RouterLink>.
           </li>
           <li>On <strong>Review</strong>, check the details and select <strong>Save charge point</strong>.</li>
           <li>
@@ -163,6 +164,106 @@ export const HELP_ARTICLES = [
           Once the charger connects, its row shows <strong>Online</strong>. If it stays offline, check that the identity
           matches exactly.
         </Alert>
+      </>
+    ),
+  },
+  {
+    id: 'connector-power-types',
+    title: 'Choosing a power type',
+    permission: 'stations.manage',
+    body: (
+      <>
+        <Para>
+          Each connector has a <strong>power type</strong>. It describes the electrical supply the charger takes from
+          the building, and what the connector can deliver. Drivers and roaming partners use it to find a suitable
+          charger, so choose the one that matches the charger's label or its datasheet.
+        </Para>
+        <Typography variant="h6" gutterBottom>
+          What each power type means
+        </Typography>
+        <Para>
+          Voltages are given for North America first, with Europe where it differs. Your local supply may vary, so
+          check the charger's label.
+        </Para>
+        <Steps>
+          <li>
+            <strong>AC single-phase</strong>: one live wire and a neutral. In North America, 120 V from the live wire to
+            neutral; in Europe, about 230 V. Most home and small workplace chargers use this.
+          </li>
+          <li>
+            <strong>AC two-phase</strong>: two of the three live wires from a three-phase supply, plus a neutral. In
+            North America, each wire measures 120 V to neutral and 208 V between the two wires. It's found in three-phase
+            buildings, where the charger takes two of the three wires.
+          </li>
+          <li>
+            <strong>AC split-phase</strong>: two live wires half a cycle apart, with a centre-tapped neutral. In North
+            America, each wire measures 120 V to neutral and 240 V between the two wires. It's common for 240 V chargers
+            in North American homes and small buildings.
+          </li>
+          <li>
+            <strong>AC three-phase</strong>: three live wires plus a neutral. In North America, 208 V between wires; in
+            Europe, about 400 V. It's used by larger workplace and fleet chargers. Only Mennekes (Type 2) plugs carry it,
+            and CCS2 includes one.
+          </li>
+          <li>
+            <strong>DC</strong>: direct current. The charger converts the power itself and feeds the battery directly,
+            so it charges much faster than AC. It needs a DC connector: CCS1, CCS2, CHAdeMO, or the Tesla connector.
+          </li>
+        </Steps>
+        <Typography variant="h6" gutterBottom>
+          Which connectors carry each power type
+        </Typography>
+        <Para>
+          A plug only has the pins for the power it can carry. The table shows the combinations the app allows.
+        </Para>
+        <Box sx={{ overflowX: 'auto', mb: 2 }}>
+          <Table size="small" sx={{ minWidth: 480 }}>
+            <TableHead>
+              <TableRow>
+                <TableCell>Power type</TableCell>
+                <TableCell>Connectors that carry it</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              <TableRow>
+                <TableCell>AC single-phase</TableCell>
+                <TableCell>
+                  SAE J1772 Type 1, Type 2 (Mennekes), Type 3A, Type 3C, CCS1, CCS2, the Tesla connector (NACS), and
+                  household plugs
+                </TableCell>
+              </TableRow>
+              <TableRow>
+                <TableCell>AC two-phase</TableCell>
+                <TableCell>SAE J1772 Type 1, Type 2 (Mennekes), CCS1, CCS2</TableCell>
+              </TableRow>
+              <TableRow>
+                <TableCell>AC split-phase</TableCell>
+                <TableCell>SAE J1772 Type 1, Type 2 (Mennekes), CCS1, CCS2, the Tesla connector (NACS)</TableCell>
+              </TableRow>
+              <TableRow>
+                <TableCell>AC three-phase</TableCell>
+                <TableCell>Type 2 (Mennekes), CCS2</TableCell>
+              </TableRow>
+              <TableRow>
+                <TableCell>DC</TableCell>
+                <TableCell>CCS1, CCS2, CHAdeMO, the Tesla connector (NACS)</TableCell>
+              </TableRow>
+            </TableBody>
+          </Table>
+        </Box>
+        <Para>
+          The app greys out a power type that the chosen connector can't carry, so you can't pick a combination that
+          doesn't work. Household plugs carry single-phase AC only. The Tesla Roadster connector takes any AC type but
+          not DC, so pick the AC type the charger supports.
+        </Para>
+        <Alert severity="info" sx={{ mb: 2 }}>
+          If you change the connector standard to one that can't carry the power type you chose, the app clears the
+          power type. Choose it again from the options that are left.
+        </Alert>
+        <Para>
+          The same rules apply when you edit a charge point. The server also refuses a saved combination that a connector
+          can't carry, so a charge point can't be saved in an impossible state.
+        </Para>
       </>
     ),
   },

@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { prisma } from '../db.js';
 import { registry } from '../services/stationRegistry.js';
 import { enqueueForActivePartners } from '../ocpi/outbox.js';
-import { CONNECTOR_STANDARDS, CONNECTOR_FORMATS, POWER_TYPES } from '../ocpi/mappers.js';
+import { CONNECTOR_STANDARDS, CONNECTOR_FORMATS, POWER_TYPES, powerTypeAllowed } from '../ocpi/mappers.js';
 import { latestReadings } from '../services/meterService.js';
 
 export const adminStationsRouter = Router();
@@ -60,6 +60,9 @@ function connectorDetailsError(list, allowedIds) {
     if (c.standard && !CONNECTOR_STANDARDS.includes(c.standard)) return `standard "${c.standard}" is not a valid connector standard`;
     if (c.format && !CONNECTOR_FORMATS.includes(c.format)) return `format "${c.format}" must be CABLE or SOCKET`;
     if (c.powerType && !POWER_TYPES.includes(c.powerType)) return `powerType "${c.powerType}" is not valid`;
+    if (c.standard && c.powerType && !powerTypeAllowed(c.standard, c.powerType)) {
+      return `power type ${c.powerType} is not carried by connector standard ${c.standard}`;
+    }
     for (const key of ['maxVoltage', 'maxAmperage']) {
       const v = c[key];
       if (v === '' || v == null) continue;
