@@ -33,6 +33,7 @@ CREATE TABLE `Admin` (
     `id` VARCHAR(191) NOT NULL,
     `tenantId` VARCHAR(191) NOT NULL,
     `email` VARCHAR(191) NOT NULL,
+    `samlNameId` VARCHAR(191) NULL,
     `passwordHash` VARCHAR(191) NULL,
     `mfaSecret` VARCHAR(191) NULL,
     `mfaEnabled` BOOLEAN NOT NULL DEFAULT false,
@@ -45,6 +46,7 @@ CREATE TABLE `Admin` (
 
     UNIQUE INDEX `Admin_email_key`(`email`),
     INDEX `Admin_tenantId_idx`(`tenantId`),
+    UNIQUE INDEX `Admin_tenantId_samlNameId_key`(`tenantId`, `samlNameId`),
     PRIMARY KEY (`id`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
@@ -74,6 +76,10 @@ CREATE TABLE `SamlConfig` (
     `idpSsoUrl` VARCHAR(191) NULL,
     `idpCertificate` TEXT NULL,
     `autoProvision` BOOLEAN NOT NULL DEFAULT false,
+    `nameIdFormat` VARCHAR(191) NOT NULL DEFAULT 'emailAddress',
+    `groupAttribute` VARCHAR(191) NULL,
+    `groupRoleMappings` TEXT NOT NULL DEFAULT '[]',
+    `defaultRole` VARCHAR(191) NULL DEFAULT 'VIEWER',
     `updatedAt` DATETIME(3) NOT NULL,
 
     PRIMARY KEY (`tenantId`)

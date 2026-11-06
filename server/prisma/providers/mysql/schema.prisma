@@ -73,6 +73,9 @@ model Admin {
   tenant             Tenant   @relation(fields: [tenantId], references: [id])
   tenantId           String
   email              String   @unique
+  // The identity this account has at the SAML identity provider, when it is
+  // not the email (persistent or unspecified NameID). Unique within a site.
+  samlNameId         String?
   // Null for SSO-only accounts that authenticate exclusively via SAML.
   passwordHash       String?
   mfaSecret          String?
@@ -92,6 +95,7 @@ model Admin {
   createdAt          DateTime @default(now())
 
   @@index([tenantId])
+  @@unique([tenantId, samlNameId])
 }
 
 // One row per site (keyed by tenant): white-label branding and
@@ -130,9 +134,22 @@ model SamlConfig {
   idpEntityId    String?
   idpSsoUrl      String?
   idpCertificate String? @db.Text
-  // When true, a SAML assertion for an email with no matching Admin
+  // When true, a SAML assertion for an identity with no matching Admin
   // auto-creates an SSO-only account. When false, that login is rejected.
   autoProvision  Boolean  @default(false)
+  // Which NameID format identifies a user: "emailAddress", "persistent" or
+  // "unspecified". For emailAddress the NameID is the email; otherwise the
+  // NameID is stored on Admin.samlNameId and the email comes from an attribute.
+  nameIdFormat   String   @default("emailAddress")
+  // Name of the assertion attribute that lists the user's groups. Null turns
+  // group-based roles off, and roles are left as they are.
+  groupAttribute String?
+  // JSON array of { "group": string, "role": string }, in priority order: the
+  // first entry whose group the user belongs to sets the role.
+  groupRoleMappings String @db.Text @default("[]")
+  // Role for a user in none of the mapped groups. Null denies login to those
+  // users. Only used when groupAttribute is set.
+  defaultRole    String?  @default("VIEWER")
   updatedAt      DateTime @updatedAt
 }
 

@@ -1,6 +1,8 @@
 import { Router } from 'express';
 import { prisma } from '../db.js';
 import { PERMISSIONS } from '../auth/permissions.js';
+import { currentTenantId } from '../tenancy/context.js';
+import { parseGroupRoleMappings } from '../services/samlService.js';
 import {
   listRoles,
   validateRoleInput,
@@ -70,6 +72,12 @@ adminRolesRouter.delete('/:name', async (req, res) => {
   const assigned = await prisma.admin.count({ where: { role: name } });
   if (assigned > 0) {
     return res.status(400).json({ error: `Move the ${assigned} user(s) with this role to another role first` });
+  }
+  const samlConfig = await prisma.samlConfig.findUnique({ where: { tenantId: currentTenantId() } });
+  const usedBySso =
+    samlConfig?.defaultRole === name || parseGroupRoleMappings(samlConfig?.groupRoleMappings ?? '[]').some((m) => m.role === name);
+  if (usedBySso) {
+    return res.status(400).json({ error: 'This role is used by a single sign-on group mapping. Remove it from the SSO settings first.' });
   }
 
   await prisma.customRole.delete({ where: { id: existing.id } });

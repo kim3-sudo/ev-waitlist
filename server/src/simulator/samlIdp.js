@@ -32,6 +32,12 @@ export const idpCertPem = readFileSync(path.join(__dirname, 'fixtures/idp-cert.p
 export const idpKeyPem = readFileSync(path.join(__dirname, 'fixtures/idp-key.pem'), 'utf8');
 export const idpEntityId = 'https://plugyard-test-idp.local/metadata';
 
+const NAME_ID_FORMAT_URNS = {
+  emailAddress: 'urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress',
+  persistent: 'urn:oasis:names:tc:SAML:2.0:nameid-format:persistent',
+  unspecified: 'urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified',
+};
+
 function xmlEscape(value) {
   return String(value).replace(/[<>&'"]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', "'": '&apos;', '"': '&quot;' })[c]);
 }
@@ -71,6 +77,11 @@ export function buildSignedSamlResponse({
   acsUrl = spCallbackUrl,
   email,
   nameId = email,
+  // Short name (emailAddress, persistent, unspecified), as in SamlConfig.nameIdFormat.
+  nameIdFormat = 'emailAddress',
+  // Group names to put in the assertion, under groupAttribute.
+  groups = [],
+  groupAttribute = 'groups',
   issuer = idpEntityId,
   signed = true,
   // Lets tests simulate a forged assertion signed by a key the SP has never
@@ -78,6 +89,8 @@ export function buildSignedSamlResponse({
   signingKeyPem = idpKeyPem,
 }) {
   if (!email) throw new Error('email is required');
+  const formatUrn = NAME_ID_FORMAT_URNS[nameIdFormat];
+  if (!formatUrn) throw new Error(`Unknown NameID format: ${nameIdFormat}`);
 
   const responseId = uniqueId();
   const assertionId = uniqueId();
@@ -90,7 +103,7 @@ export function buildSignedSamlResponse({
     `ID="${assertionId}" IssueInstant="${issueInstant}" Version="2.0">` +
     `<saml:Issuer>${xmlEscape(issuer)}</saml:Issuer>` +
     '<saml:Subject>' +
-    `<saml:NameID Format="urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress">${xmlEscape(nameId)}</saml:NameID>` +
+    `<saml:NameID Format="${formatUrn}">${xmlEscape(nameId)}</saml:NameID>` +
     '<saml:SubjectConfirmation Method="urn:oasis:names:tc:SAML:2.0:cm:bearer">' +
     `<saml:SubjectConfirmationData Recipient="${xmlEscape(acsUrl)}" NotOnOrAfter="${notOnOrAfter}"/>` +
     '</saml:SubjectConfirmation>' +
@@ -103,6 +116,11 @@ export function buildSignedSamlResponse({
     '</saml:AuthnStatement>' +
     '<saml:AttributeStatement>' +
     `<saml:Attribute Name="email"><saml:AttributeValue>${xmlEscape(email)}</saml:AttributeValue></saml:Attribute>` +
+    (groups.length
+      ? `<saml:Attribute Name="${xmlEscape(groupAttribute)}">` +
+        groups.map((g) => `<saml:AttributeValue>${xmlEscape(g)}</saml:AttributeValue>`).join('') +
+        '</saml:Attribute>'
+      : '') +
     '</saml:AttributeStatement>' +
     '</saml:Assertion>';
 
@@ -146,6 +164,22 @@ function loginFormHtml({ acsUrl, spEntityId: audience, relayState }) {
     <label>Email to assert<br/>
       <input type="email" name="email" required autofocus style="width: 100%; padding: 0.5rem; margin: 0.5rem 0;" />
     </label>
+    <label>NameID (blank = the email)<br/>
+      <input type="text" name="nameId" style="width: 100%; padding: 0.5rem; margin: 0.5rem 0;" />
+    </label>
+    <label>NameID format<br/>
+      <select name="nameIdFormat" style="width: 100%; padding: 0.5rem; margin: 0.5rem 0;">
+        <option value="emailAddress">emailAddress</option>
+        <option value="persistent">persistent</option>
+        <option value="unspecified">unspecified</option>
+      </select>
+    </label>
+    <label>Groups (comma-separated)<br/>
+      <input type="text" name="groups" style="width: 100%; padding: 0.5rem; margin: 0.5rem 0;" />
+    </label>
+    <label>Group attribute name<br/>
+      <input type="text" name="groupAttribute" value="groups" style="width: 100%; padding: 0.5rem; margin: 0.5rem 0;" />
+    </label>
     <button type="submit" style="padding: 0.5rem 1rem;">Sign in</button>
   </form>
 </body></html>`;
@@ -185,10 +219,15 @@ export function createIdpSimulatorApp() {
   });
 
   app.post('/sso', (req, res) => {
-    const { email, acsUrl, spEntityId: audience, relayState } = req.body ?? {};
+    const { email, nameId, nameIdFormat, groups, groupAttribute, acsUrl, spEntityId: audience, relayState } = req.body ?? {};
     if (!email) return res.status(400).send('email is required');
+    const groupList = (groups ?? '').split(',').map((g) => g.trim()).filter(Boolean);
     const samlResponse = buildSignedSamlResponse({
       email,
+      nameId: nameId || email,
+      nameIdFormat: nameIdFormat || 'emailAddress',
+      groups: groupList,
+      groupAttribute: groupAttribute || 'groups',
       acsUrl: acsUrl || spCallbackUrl,
       spEntityId: audience || spEntityId,
     });

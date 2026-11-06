@@ -1,20 +1,46 @@
 import { useState } from 'react';
-import { Alert, Button, CircularProgress, Stack, Typography } from '@mui/material';
+import { Accordion, AccordionDetails, AccordionSummary, Alert, Button, CircularProgress, Stack, Typography } from '@mui/material';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import CancelIcon from '@mui/icons-material/Cancel';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import RadioButtonUncheckedIcon from '@mui/icons-material/RadioButtonUnchecked';
 import RemoveIcon from '@mui/icons-material/Remove';
 import { api } from '../api/client.js';
 
 // The checks, in the order they run. The server runs each one when the page asks for it,
-// so every result shows as soon as it arrives.
+// so every result shows as soon as it arrives. `details` explains what each check does,
+// and is shown when a step is expanded.
 const STEPS = [
-  { id: 'connected', label: 'Connected to the app' },
-  { id: 'configuration', label: 'Answers a request' },
-  { id: 'deactivate', label: 'Taken out of service (sent by the app)' },
-  { id: 'deactivated', label: 'Reports it is unavailable' },
-  { id: 'activate', label: 'Returned to service (sent by the app)' },
-  { id: 'activated', label: 'Reports it is back in service' },
+  {
+    id: 'connected',
+    label: 'Connected to the app',
+    details: 'Checks that the charge point has opened a connection to this server.',
+  },
+  {
+    id: 'configuration',
+    label: 'Answers a request',
+    details: 'Asks the charge point for its settings. An answer shows that requests reach it and it replies.',
+  },
+  {
+    id: 'deactivate',
+    label: 'Taken out of service (sent by the app)',
+    details: 'Tells the charge point to become unavailable. If a charging session is in progress, this check fails and the charge point is not changed.',
+  },
+  {
+    id: 'deactivated',
+    label: 'Reports it is unavailable',
+    details: 'Waits for the charge point to report that it is unavailable after the previous step.',
+  },
+  {
+    id: 'activate',
+    label: 'Returned to service (sent by the app)',
+    details: 'Tells the charge point to return to service. It still runs when a later check fails, so the charge point is not left out of service.',
+  },
+  {
+    id: 'activated',
+    label: 'Reports it is back in service',
+    details: 'Waits for the charge point to report a status other than unavailable or faulted.',
+  },
 ];
 
 // Steps that must pass before the charge point is changed at all.
@@ -104,20 +130,31 @@ export function ConnectionTest({ identity, disabled = false, disabledReason }) {
           {STEPS.map((step) => {
             const r = results[step.id];
             return (
-              <Stack key={step.id} component="li" direction="row" spacing={1.5} sx={{ alignItems: 'flex-start' }}>
-                <span style={{ display: 'inline-flex', width: 24, justifyContent: 'center', paddingTop: 2 }}>
-                  <StepIcon state={r.state} />
-                </span>
-                <Stack>
-                  <Typography variant="body2" fontWeight={r.state === 'running' ? 600 : 400}>
-                    {step.label}
-                  </Typography>
-                  {r.message && (
-                    <Typography variant="caption" color={r.state === 'fail' ? 'error' : 'text.secondary'}>
-                      {r.message}
+              <Stack key={step.id} component="li">
+                <Accordion disableGutters variant="outlined" sx={{ '&::before': { display: 'none' } }}>
+                  <AccordionSummary expandIcon={<ExpandMoreIcon />} aria-controls={`${step.id}-details`}>
+                    <Stack direction="row" spacing={1.5} sx={{ alignItems: 'flex-start' }}>
+                      <span style={{ display: 'inline-flex', width: 24, justifyContent: 'center', paddingTop: 2 }}>
+                        <StepIcon state={r.state} />
+                      </span>
+                      <Stack>
+                        <Typography variant="body2" fontWeight={r.state === 'running' ? 600 : 400}>
+                          {step.label}
+                        </Typography>
+                        {r.message && (
+                          <Typography variant="caption" color={r.state === 'fail' ? 'error' : 'text.secondary'}>
+                            {r.message}
+                          </Typography>
+                        )}
+                      </Stack>
+                    </Stack>
+                  </AccordionSummary>
+                  <AccordionDetails id={`${step.id}-details`}>
+                    <Typography variant="body2" color="text.secondary" sx={{ pl: 4.5 }}>
+                      {step.details}
                     </Typography>
-                  )}
-                </Stack>
+                  </AccordionDetails>
+                </Accordion>
               </Stack>
             );
           })}

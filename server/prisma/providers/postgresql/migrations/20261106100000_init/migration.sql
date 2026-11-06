@@ -32,6 +32,7 @@ CREATE TABLE "Admin" (
     "id" TEXT NOT NULL,
     "tenantId" TEXT NOT NULL,
     "email" TEXT NOT NULL,
+    "samlNameId" TEXT,
     "passwordHash" TEXT,
     "mfaSecret" TEXT,
     "mfaEnabled" BOOLEAN NOT NULL DEFAULT false,
@@ -71,6 +72,10 @@ CREATE TABLE "SamlConfig" (
     "idpSsoUrl" TEXT,
     "idpCertificate" TEXT,
     "autoProvision" BOOLEAN NOT NULL DEFAULT false,
+    "nameIdFormat" TEXT NOT NULL DEFAULT 'emailAddress',
+    "groupAttribute" TEXT,
+    "groupRoleMappings" TEXT NOT NULL DEFAULT '[]',
+    "defaultRole" TEXT DEFAULT 'VIEWER',
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
     CONSTRAINT "SamlConfig_pkey" PRIMARY KEY ("tenantId")
@@ -419,6 +424,9 @@ CREATE UNIQUE INDEX "Admin_email_key" ON "Admin"("email");
 
 -- CreateIndex
 CREATE INDEX "Admin_tenantId_idx" ON "Admin"("tenantId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "Admin_tenantId_samlNameId_key" ON "Admin"("tenantId", "samlNameId");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "Zone_tenantId_name_key" ON "Zone"("tenantId", "name");

@@ -1,10 +1,9 @@
 import { Router } from 'express';
 import express from 'express';
 import jwt from 'jsonwebtoken';
-import { prisma } from '../db.js';
 import { config } from '../config.js';
 import { siteConfig } from '../services/runtimeConfig.js';
-import { buildSamlClient, getSamlConfig } from '../services/samlService.js';
+import { buildSamlClient, getSamlConfig, resolveSsoLogin } from '../services/samlService.js';
 
 export const samlRouter = Router();
 
@@ -45,17 +44,9 @@ samlRouter.post('/acs', express.urlencoded({ extended: false }), async (req, res
     return res.status(401).send(`SAML login failed: ${err.message}`);
   }
 
-  const email = profile?.email || profile?.mail || profile?.nameID;
-  if (!email) return res.status(401).send('SAML assertion did not include an email address');
-
-  let admin = await prisma.admin.findUnique({ where: { email } });
-  if (!admin) {
-    if (!samlConfig.autoProvision) {
-      return res.status(401).send(`No account found for ${email} and auto-provisioning is disabled`);
-    }
-    // Auto-provisioned accounts start as viewers; an admin can promote them.
-    admin = await prisma.admin.create({ data: { email, passwordHash: null, role: 'VIEWER' } });
-  }
+  const result = await resolveSsoLogin(profile, samlConfig);
+  if (result.status) return res.status(result.status).send(result.message);
+  const { admin } = result;
 
   const token = jwt.sign({ sub: admin.id, email: admin.email, tenantId: admin.tenantId }, config.jwtSecret, { expiresIn: '12h' });
   const redirectUrl = new URL('/sso/callback', siteConfig().corsOrigin);
