@@ -1,5 +1,5 @@
 import bcrypt from 'bcryptjs';
-import { prisma } from '../db.js';
+import { prisma, rawPrisma } from '../db.js';
 import { generateEmail, generatePassphrase } from '../utils/passphrase.js';
 
 // On a fresh database (no admin accounts yet), creates one admin with a random
@@ -7,7 +7,8 @@ import { generateEmail, generatePassphrase } from '../utils/passphrase.js';
 // The admin must change the passphrase on first login. Returns null when any
 // admin already exists, so repeated starts don't create or reset accounts.
 export async function ensureFirstRunAdmin() {
-  const count = await prisma.admin.count();
+  // Instance-level check: any admin in any site means the first run is over.
+  const count = await rawPrisma.admin.count();
   if (count > 0) return null;
 
   const email = generateEmail();
@@ -17,6 +18,8 @@ export async function ensureFirstRunAdmin() {
       email,
       passwordHash: await bcrypt.hash(password, 10),
       mustChangePassword: true,
+      // The person who sets up the installation administers all sites.
+      instanceAdmin: true,
     },
   });
   return { email, password };

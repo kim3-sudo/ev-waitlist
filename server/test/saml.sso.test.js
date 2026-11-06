@@ -7,7 +7,7 @@ import { resetDb } from './support/db.js';
 import { createAdmin } from './support/factories.js';
 import { buildSignedSamlResponse, idpCertPem } from '../src/simulator/samlIdp.js';
 import { prisma } from '../src/db.js';
-import { config } from '../src/config.js';
+import { siteConfig } from '../src/services/runtimeConfig.js';
 
 let token;
 
@@ -77,7 +77,7 @@ describe('SAML SP, once configured', () => {
 
     assert.equal(res.status, 302);
     const redirect = new URL(res.headers.location);
-    assert.equal(redirect.origin + redirect.pathname, `${config.corsOrigin}/sso/callback`);
+    assert.equal(redirect.origin + redirect.pathname, `${siteConfig().corsOrigin}/sso/callback`);
     assert.equal(redirect.searchParams.get('email'), existing.email);
     assert.ok(redirect.searchParams.get('token'));
   });

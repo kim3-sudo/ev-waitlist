@@ -1,11 +1,11 @@
-import { prisma } from '../db.js';
-import { config } from '../config.js';
+import { prisma, rawPrisma } from '../db.js';
 import { encryptSecret, decryptSecret, isEncryptionReady } from '../utils/secretBox.js';
+import { currentTenantId, DEFAULT_TENANT_ID } from '../tenancy/context.js';
 
-// Every setting that moved out of the environment file. `env` is the old
-// variable name, read once to seed the database when no row exists yet.
-// `kind` decides validation and storage: url | int | enum | text | secret.
-// `group` decides which admin page (and permission) can change it.
+// Every per-site setting. `env` is the old variable name, read once to seed the
+// default site when no row exists yet. `kind` decides validation and storage:
+// url | int | enum | text | secret. `group` decides which admin page (and
+// permission) can change it.
 export const SETTING_DEFS = {
   publicUrl: { env: 'PUBLIC_URL', fallback: 'http://localhost:4000', kind: 'url', group: 'system' },
   corsOrigin: { env: 'CORS_ORIGIN', fallback: 'http://localhost:5173', kind: 'url', group: 'system' },
@@ -30,7 +30,7 @@ export const SETTING_DEFS = {
   'square.accessToken': { env: 'SQUARE_ACCESS_TOKEN', fallback: '', kind: 'secret', group: 'square' },
   'square.locationId': { env: 'SQUARE_LOCATION_ID', fallback: '', kind: 'text', group: 'square' },
   'square.webhookSignatureKey': { env: 'SQUARE_WEBHOOK_SIGNATURE_KEY', fallback: '', kind: 'secret', group: 'square' },
-  // Optional: empty means "derive from the public URL".
+  // Optional: empty means "derive from the public URL and this site's path".
   'square.webhookUrl': { env: 'SQUARE_WEBHOOK_URL', fallback: '', kind: 'url', group: 'square', optional: true },
 };
 
@@ -55,43 +55,89 @@ function effective(def, raw) {
   return raw;
 }
 
-// Copies the stored values into the in-memory `config` object.
-// Secrets that can't be decrypted (wrong or missing CONFIG_ENCRYPTION_KEY) load as empty.
-export function applyStoredValues(rows) {
+// Where a site's API routes live. The default site uses the un-prefixed paths.
+export function sitePathPrefix(slug) {
+  return !slug || slug === DEFAULT_TENANT_ID ? '/api' : `/api/t/${slug}`;
+}
+
+// Builds one site's resolved settings from its stored rows. Secrets that can't
+// be decrypted (wrong or missing CONFIG_ENCRYPTION_KEY) load as empty and are
+// reported as unreadable.
+function buildSite(stored, slug) {
+  const config = { stripe: {}, braintree: {}, square: {} };
   const unreadable = new Set();
   for (const [key, def] of Object.entries(SETTING_DEFS)) {
-    const stored = rows.get(key);
+    const raw = stored.get(key);
     let value;
     if (SECRET_KINDS.has(def.kind)) {
       try {
-        value = stored ? decryptSecret(stored) : def.fallback;
+        value = raw ? decryptSecret(raw) : def.fallback;
       } catch {
         unreadable.add(key);
         value = '';
       }
     } else {
-      value = effective(def, stored);
+      value = effective(def, raw);
     }
     if (def.kind === 'int') value = Number(value);
     setPath(config, key, value);
   }
-  // Square's webhook URL defaults to the public URL when left blank.
+  // Square's webhook URL defaults to this site's public address.
   if (!config.square.webhookUrl) {
-    config.square.webhookUrl = `${config.publicUrl.replace(/\/$/, '')}/api/payments/square/webhook`;
+    config.square.webhookUrl = `${config.publicUrl.replace(/\/$/, '')}${sitePathPrefix(slug)}/payments/square/webhook`;
   }
-  return unreadable;
+  return { slug, config, unreadable };
 }
 
-let unreadableSecrets = new Set();
+// Loaded sites, keyed by tenant id.
+const sites = new Map();
 
-// Loads settings from the database. The first time a key has no row, its value
-// is copied in from the matching environment variable (if one is set).
+// The current site's resolved settings. A site that isn't loaded yet gets the
+// fresh-install defaults, so nothing reads another site's values.
+export function siteConfig(tenantId = currentTenantId()) {
+  const site = sites.get(tenantId);
+  if (site) return site.config;
+  return buildSite(new Map(), tenantId).config;
+}
+
+function currentSite() {
+  return sites.get(currentTenantId()) ?? buildSite(new Map(), currentTenantId());
+}
+
+// Loads one site's settings from the database. Returns its resolved config, or
+// null if the site no longer exists.
+export async function loadSiteConfig(tenantId) {
+  const tenant = await rawPrisma.tenant.findUnique({ where: { id: tenantId }, select: { slug: true } });
+  if (!tenant) {
+    sites.delete(tenantId);
+    return null;
+  }
+  const rows = await rawPrisma.configValue.findMany({ where: { tenantId } });
+  const site = buildSite(new Map(rows.map((r) => [r.key, r.value])), tenant.slug);
+  sites.set(tenantId, site);
+  return site.config;
+}
+
+// Loads a site's settings if they aren't in memory yet. Called where a request
+// or message first enters a site.
+export async function ensureSiteLoaded(tenantId) {
+  if (!sites.has(tenantId)) await loadSiteConfig(tenantId);
+}
+
+// Every loaded site's CORS origin, for the CORS check.
+export function allowedOrigins() {
+  return new Set([...sites.values()].map((site) => site.config.corsOrigin));
+}
+
+// Loads every site. The first time a key has no row in the default site, its
+// value is copied in from the matching environment variable (if one is set).
+// Environment values are instance-wide, so they only ever seed the default site.
 export async function initRuntimeConfig() {
-  let rows = await prisma.configValue.findMany();
-  let stored = new Map(rows.map((r) => [r.key, r.value]));
+  const defaultRows = await rawPrisma.configValue.findMany({ where: { tenantId: DEFAULT_TENANT_ID } });
+  const existing = new Set(defaultRows.map((r) => r.key));
 
   for (const [key, def] of Object.entries(SETTING_DEFS)) {
-    if (stored.has(key)) continue;
+    if (existing.has(key)) continue;
     const fromEnv = process.env[def.env];
     if (fromEnv === undefined || fromEnv === '') continue;
     if (SECRET_KINDS.has(def.kind) && !isEncryptionReady()) {
@@ -103,15 +149,27 @@ export async function initRuntimeConfig() {
       console.warn(`[config] ${def.env} ignored: ${check.error}`);
       continue;
     }
-    await prisma.configValue.create({
-      data: { key, value: SECRET_KINDS.has(def.kind) ? encryptSecret(check.value) : check.value },
+    await rawPrisma.configValue.create({
+      data: {
+        tenantId: DEFAULT_TENANT_ID,
+        key,
+        value: SECRET_KINDS.has(def.kind) ? encryptSecret(check.value) : check.value,
+      },
     });
   }
 
-  rows = await prisma.configValue.findMany();
-  stored = new Map(rows.map((r) => [r.key, r.value]));
-  unreadableSecrets = applyStoredValues(stored);
-  return config;
+  await loadAllSites();
+  return siteConfig(DEFAULT_TENANT_ID);
+}
+
+// Reloads every site from the database. Drops sites that no longer exist.
+export async function loadAllSites() {
+  const tenants = await rawPrisma.tenant.findMany({ select: { id: true } });
+  const ids = new Set(tenants.map((t) => t.id));
+  for (const id of [...sites.keys()]) {
+    if (!ids.has(id)) sites.delete(id);
+  }
+  for (const tenant of tenants) await loadSiteConfig(tenant.id);
 }
 
 // Returns { value } with the normalized value, or { error } with a message.
@@ -152,8 +210,9 @@ export function validateValue(key, input) {
   }
 }
 
-// Saves changed settings. `allowedGroups` limits which groups this caller may change.
-// Keys with `undefined` are skipped. A secret saved as an empty string is cleared.
+// Saves changed settings for the current site. `allowedGroups` limits which
+// groups this caller may change. Keys with `undefined` are skipped. A secret
+// saved as an empty string is cleared.
 export async function saveRuntimeSettings(updates, allowedGroups) {
   const writes = [];
   for (const [key, input] of Object.entries(updates)) {
@@ -175,33 +234,40 @@ export async function saveRuntimeSettings(updates, allowedGroups) {
     }
   }
 
+  const tenantId = currentTenantId();
   await prisma.$transaction(
     writes.map((w) =>
-      prisma.configValue.upsert({ where: { key: w.key }, create: w, update: { value: w.value } }),
+      prisma.configValue.upsert({
+        where: { tenantId_key: { tenantId, key: w.key } },
+        create: { key: w.key, value: w.value },
+        update: { value: w.value },
+      }),
     ),
   );
 
-  // Reload everything so derived values (like the Square webhook URL) stay in step.
-  await initRuntimeConfig();
+  // Reload this site so derived values (like the Square webhook URL) stay in step.
+  await loadSiteConfig(tenantId);
   return { ok: true };
 }
 
-// What the admin UI may see. Secret values are never returned, only whether one is saved.
+// What the admin UI may see for the current site. Secret values are never
+// returned, only whether one is saved.
 export function runtimeSettingsView(allowedGroups) {
+  const site = currentSite();
   const values = {};
   const secretsSet = {};
   for (const [key, def] of Object.entries(SETTING_DEFS)) {
     if (!allowedGroups.includes(def.group)) continue;
     if (SECRET_KINDS.has(def.kind)) {
-      secretsSet[key] = Boolean(getPath(config, key)) && !unreadableSecrets.has(key);
+      secretsSet[key] = Boolean(getPath(site.config, key)) && !site.unreadable.has(key);
     } else {
-      values[key] = getPath(config, key);
+      values[key] = getPath(site.config, key);
     }
   }
   return {
     values,
     secretsSet,
-    unreadable: [...unreadableSecrets].filter((k) => allowedGroups.includes(SETTING_DEFS[k].group)),
+    unreadable: [...site.unreadable].filter((k) => allowedGroups.includes(SETTING_DEFS[k].group)),
     encryptionReady: isEncryptionReady(),
   };
 }

@@ -8,6 +8,7 @@ import {
   createRole,
   updateRole,
   resolvePermissions,
+  findCustomRole,
 } from '../services/roleService.js';
 
 // Mounted behind users.manage. Custom roles only; built-in roles are read-only.
@@ -35,7 +36,7 @@ adminRolesRouter.post('/', async (req, res) => {
 
 adminRolesRouter.patch('/:name', async (req, res) => {
   const name = req.params.name;
-  const existing = await prisma.customRole.findUnique({ where: { name } });
+  const existing = await findCustomRole(name);
   if (!existing) return res.status(404).json({ error: 'Role not found' });
 
   const { value, error } = validateRoleInput(
@@ -59,7 +60,7 @@ adminRolesRouter.patch('/:name', async (req, res) => {
 
 adminRolesRouter.delete('/:name', async (req, res) => {
   const name = req.params.name;
-  const existing = await prisma.customRole.findUnique({ where: { name } });
+  const existing = await findCustomRole(name);
   if (!existing) return res.status(404).json({ error: 'Role not found' });
 
   const current = await resolvePermissions(name);
@@ -71,6 +72,6 @@ adminRolesRouter.delete('/:name', async (req, res) => {
     return res.status(400).json({ error: `Move the ${assigned} user(s) with this role to another role first` });
   }
 
-  await prisma.customRole.delete({ where: { name } });
+  await prisma.customRole.delete({ where: { id: existing.id } });
   res.status(204).end();
 });

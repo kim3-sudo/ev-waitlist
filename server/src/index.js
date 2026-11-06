@@ -1,10 +1,14 @@
 import { config } from './config.js';
 import { initRuntimeConfig } from './services/runtimeConfig.js';
+import { ensureDefaultTenant } from './db.js';
 import { createApp } from './app.js';
 import { createCentralSystem } from './ocpp/centralSystem.js';
 import { startReservationSweeper } from './services/reservationSweeper.js';
+import { startRetentionSweeper } from './services/retentionSweeper.js';
+import { startOcpiDispatcher } from './ocpi/outbox.js';
 
 // Settings come from the database, so load them before anything starts serving.
+await ensureDefaultTenant();
 await initRuntimeConfig();
 
 const app = createApp();
@@ -19,3 +23,5 @@ const centralSystem = createCentralSystem();
 httpServer.on('upgrade', centralSystem.handleUpgrade);
 
 startReservationSweeper();
+startRetentionSweeper();
+startOcpiDispatcher();

@@ -143,3 +143,10 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
+
+# Local data that must not be committed: the SQLite database, and the generated
+# installation secrets (JWT key and encryption key), created on first start
+data/
+# Databases written next to the schema by mistake (SQLite paths are relative to server/prisma)
+server/prisma/*.db
+server/prisma/*.db-journal

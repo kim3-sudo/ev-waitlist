@@ -1,24 +1,37 @@
 import { SAML } from '@node-saml/node-saml';
-import { prisma } from '../db.js';
-import { config } from '../config.js';
+import { prisma, rawPrisma } from '../db.js';
+import { siteConfig } from './runtimeConfig.js';
+import { currentTenantId, DEFAULT_TENANT_ID } from '../tenancy/context.js';
 
-const SAML_CONFIG_ID = 'singleton';
+// The default site keeps the original paths, so an identity provider configured
+// before multi-site support keeps working. Other sites get their own path.
+export function samlPathPrefix(slug) {
+  return !slug || slug === DEFAULT_TENANT_ID ? '/api/auth/saml' : `/api/t/${slug}/auth/saml`;
+}
 
 // Functions, not constants: the public URL can change in the admin UI.
-export const spEntityId = () => `${config.publicUrl}/api/auth/saml/metadata`;
-export const spCallbackUrl = () => `${config.publicUrl}/api/auth/saml/acs`;
+export const spEntityId = (slug) => `${siteConfig().publicUrl}${samlPathPrefix(slug)}/metadata`;
+export const spCallbackUrl = (slug) => `${siteConfig().publicUrl}${samlPathPrefix(slug)}/acs`;
+
+// The slug of the site the current request works in.
+export async function currentSiteSlug() {
+  const tenant = await rawPrisma.tenant.findUnique({ where: { id: currentTenantId() }, select: { slug: true } });
+  return tenant?.slug ?? DEFAULT_TENANT_ID;
+}
 
 export async function getSamlConfig() {
-  const existing = await prisma.samlConfig.findUnique({ where: { id: SAML_CONFIG_ID } });
+  const tenantId = currentTenantId();
+  const existing = await prisma.samlConfig.findUnique({ where: { tenantId } });
   if (existing) return existing;
-  return prisma.samlConfig.create({ data: { id: SAML_CONFIG_ID } });
+  return prisma.samlConfig.create({ data: { tenantId } });
 }
 
 export async function updateSamlConfig(data) {
   const { enabled, idpEntityId, idpSsoUrl, idpCertificate, autoProvision } = data;
+  const tenantId = currentTenantId();
   return prisma.samlConfig.upsert({
-    where: { id: SAML_CONFIG_ID },
-    create: { id: SAML_CONFIG_ID, enabled, idpEntityId, idpSsoUrl, idpCertificate, autoProvision },
+    where: { tenantId },
+    create: { tenantId, enabled, idpEntityId, idpSsoUrl, idpCertificate, autoProvision },
     update: { enabled, idpEntityId, idpSsoUrl, idpCertificate, autoProvision },
   });
 }
@@ -29,9 +42,10 @@ export async function buildSamlClient() {
   const samlConfig = await getSamlConfig();
   if (!samlConfig.enabled || !samlConfig.idpSsoUrl || !samlConfig.idpCertificate) return null;
 
+  const slug = await currentSiteSlug();
   return new SAML({
-    issuer: spEntityId(),
-    callbackUrl: spCallbackUrl(),
+    issuer: spEntityId(slug),
+    callbackUrl: spCallbackUrl(slug),
     entryPoint: samlConfig.idpSsoUrl,
     idpCert: samlConfig.idpCertificate,
     // Accept either a signed assertion or a signed top-level response --

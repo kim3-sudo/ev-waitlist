@@ -30,6 +30,8 @@ export function AuthProvider({ children }) {
   const [role, setRole] = useState(() => localStorage.getItem('adminRole'));
   // Permission keys granted by the role. The server is the real check; this only hides controls.
   const [permissions, setPermissions] = useState(() => readStoredPermissions());
+  // True for the installation administrator, who can manage sites.
+  const [instanceAdmin, setInstanceAdmin] = useState(() => localStorage.getItem('adminInstance') === 'true');
 
   // Re-read the role on each sign-in so a change made by another admin applies on the next load.
   useEffect(() => {
@@ -41,6 +43,8 @@ export function AuthProvider({ children }) {
         localStorage.setItem('adminRole', data.role);
         setRole(data.role);
         setPermissions(data.permissions ?? []);
+        setInstanceAdmin(Boolean(data.instanceAdmin));
+        localStorage.setItem('adminInstance', String(Boolean(data.instanceAdmin)));
       })
       .catch(() => {});
   }, [token]);
@@ -71,6 +75,7 @@ export function AuthProvider({ children }) {
       role,
       permissions,
       can: (permission) => permissions.includes(permission),
+      isInstanceAdmin: instanceAdmin,
       mustChangePassword,
       isAuthenticated: Boolean(token),
       async login(loginEmail, password) {
@@ -99,6 +104,9 @@ export function AuthProvider({ children }) {
         localStorage.removeItem('adminMustChangePassword');
         localStorage.removeItem('adminRole');
         localStorage.removeItem('adminPermissions');
+        localStorage.removeItem('adminInstance');
+        localStorage.removeItem('adminSite');
+        setInstanceAdmin(false);
         setToken(null);
         setEmail(null);
         setMustChangePassword(false);
@@ -106,7 +114,7 @@ export function AuthProvider({ children }) {
         setPermissions([]);
       },
     };
-  }, [token, email, mustChangePassword, role, permissions]);
+  }, [token, email, mustChangePassword, role, permissions, instanceAdmin]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

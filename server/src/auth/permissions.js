@@ -15,6 +15,10 @@ export const PERMISSIONS = [
   { key: 'system.manage', group: 'Settings', label: 'Change web addresses, CORS origin, and reservation window' },
   { key: 'integrations.manage', group: 'Settings', label: 'Change payment provider keys and test connections' },
   { key: 'users.manage', group: 'Users', label: 'Manage users and roles' },
+  { key: 'privacy.manage', group: 'Privacy', label: 'Set retention periods and erase a driver\'s personal data' },
+  { key: 'roaming.manage', group: 'Roaming', label: 'Turn roaming on or off and edit its warning' },
+  // Also needs the installation administrator flag (see requireInstanceAdmin).
+  { key: 'sites.manage', group: 'Sites', label: 'Create and manage sites and the operator (installation administrator only)' },
 ];
 
 export const PERMISSION_KEYS = PERMISSIONS.map((p) => p.key);

@@ -1,13 +1,14 @@
 import { prisma } from '../db.js';
-
-const SETTINGS_ID = 'singleton';
+import { currentTenantId } from '../tenancy/context.js';
 
 export const IDENTIFIER_MODES = ['LICENSE_PLATE', 'PARKING_PERMIT', 'BOTH'];
 
+// One settings row per site. The scoped client fills in the site.
 export async function getSettings() {
-  const existing = await prisma.settings.findUnique({ where: { id: SETTINGS_ID } });
+  const tenantId = currentTenantId();
+  const existing = await prisma.settings.findUnique({ where: { tenantId } });
   if (existing) return existing;
-  return prisma.settings.create({ data: { id: SETTINGS_ID } });
+  return prisma.settings.create({ data: { tenantId } });
 }
 
 export async function updateSettings(data) {
@@ -18,10 +19,11 @@ export async function updateSettings(data) {
     throw new Error(`identifierMode must be one of ${IDENTIFIER_MODES.join(', ')}`);
   }
 
+  const tenantId = currentTenantId();
   return prisma.settings.upsert({
-    where: { id: SETTINGS_ID },
+    where: { tenantId },
     create: {
-      id: SETTINGS_ID,
+      tenantId,
       companyName,
       logoUrl,
       primaryColor,

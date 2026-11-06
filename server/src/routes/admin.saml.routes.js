@@ -1,13 +1,14 @@
 import { Router } from 'express';
-import { getSamlConfig, updateSamlConfig, spEntityId, spCallbackUrl } from '../services/samlService.js';
+import { getSamlConfig, updateSamlConfig, spEntityId, spCallbackUrl, currentSiteSlug } from '../services/samlService.js';
 
 export const adminSamlRouter = Router();
 
 adminSamlRouter.get('/', async (req, res) => {
   const samlConfig = await getSamlConfig();
+  const slug = await currentSiteSlug();
   res.json({
     ...samlConfig,
-    sp: { entityId: spEntityId(), acsUrl: spCallbackUrl(), metadataUrl: spEntityId() },
+    sp: { entityId: spEntityId(slug), acsUrl: spCallbackUrl(slug), metadataUrl: spEntityId(slug) },
   });
 });
 

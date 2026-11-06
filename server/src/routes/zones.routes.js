@@ -4,6 +4,7 @@ import { registry } from '../services/stationRegistry.js';
 import { joinQueue } from '../services/queueService.js';
 import { tryDispatchZone } from '../services/dispatcher.js';
 import { getSettings, validateIdentifiers } from '../services/settingsService.js';
+import { roamingWarningError } from '../services/roaming.js';
 
 export const zonesRouter = Router();
 
@@ -52,6 +53,9 @@ zonesRouter.post('/:id/waitlist', async (req, res) => {
 
   const zone = await prisma.zone.findUnique({ where: { id: req.params.id } });
   if (!zone) return res.status(404).json({ error: 'Zone not found' });
+
+  const roamingError = await roamingWarningError(req.body);
+  if (roamingError) return res.status(roamingError.status).json(roamingError.body);
 
   const entry = await joinQueue({ zoneId: zone.id }, { name, contact, licensePlate, parkingPermit });
 

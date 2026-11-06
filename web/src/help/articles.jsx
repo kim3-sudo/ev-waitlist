@@ -365,12 +365,41 @@ export const HELP_ARTICLES = [
           Choose how to charge
         </Typography>
         <Para>
-          <strong>By time</strong> bills the minutes the car is connected. Every started minute is billed. To charge more
-          at busy times, set a <strong>Peak price per minute</strong> and the hours it applies, such as 17:00 to 21:00.
-          Minutes inside those hours use the peak price. A peak can run past midnight, such as 22:00 to 06:00.
+          <strong>By time</strong> bills the minutes the car is connected. Every started minute is billed. Time-based
+          billing does not measure the energy delivered, so a nearly full battery pays the same per minute as an empty
+          one. Some places require charging to be billed by energy. Check your local rules first.
         </Para>
         <Para>
-          <strong>By power dispensed</strong> bills per kWh, based on the charger's meter reading.
+          To charge different prices at different times, add <strong>time windows</strong>. For example, a lower price on
+          Saturday and Sunday, or a higher one from 17:00 to 21:00. Each window has its own price per minute, and the base
+          price applies to every other minute. Windows cannot overlap. A window can run past midnight, such as 22:00 to
+          06:00.
+        </Para>
+        <Para>
+          <strong>By power dispensed</strong> bills per kWh, based on the charger's meter reading. One price applies to all
+          energy.
+        </Para>
+        <Para>
+          <strong>Don't charge drivers</strong> makes charging free. Sessions are still recorded, as No charge.
+        </Para>
+        <Typography variant="h6" gutterBottom>
+          Check the price
+        </Typography>
+        <Para>
+          Open the <strong>Rate calculator</strong> and enter what the energy costs you: the grid price, any distribution
+          charge, your monthly charges, and your solar capacity if you have it. The calculator works out the cost of each
+          kWh and adds your profit margin. The <strong>price check</strong> compares the highest price a driver pays with
+          that cost, and warns when the price is far above it. The warning is stronger for Level 2 chargers, where a
+          high rate is more often a typing mistake. You can still save a high rate after you confirm it.
+        </Para>
+        <Typography variant="h6" gutterBottom>
+          Card hold before charging
+        </Typography>
+        <Para>
+          Optionally, set an amount to <strong>hold on the driver's card</strong> before a waitlisted driver starts. The
+          hold is not a charge. When the session ends, the driver is charged its actual cost, up to the hold, and the rest
+          is released. Holds need Stripe or Braintree. A driver who has not placed the hold when they are called cannot
+          start, so only use this when you are comfortable asking drivers to do that first.
         </Para>
         <Alert severity="warning" sx={{ mb: 2 }}>
           Power metering depends on what the station supports. Some stations report readings inaccurately or not at all,

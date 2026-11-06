@@ -5,7 +5,7 @@ import request from 'supertest';
 import { app } from './support/testApp.js';
 import { resetDb } from './support/db.js';
 import { prisma } from '../src/db.js';
-import { config } from '../src/config.js';
+import { setSiteSettings } from './support/siteSettings.js';
 import { createChargeForTransaction } from '../src/services/payments/chargeService.js';
 
 const KEY = 'square-test-signature-key';
@@ -30,7 +30,7 @@ async function pendingSquareCharge() {
       stoppedAt: new Date(),
     },
   });
-  await prisma.paymentSettings.create({ data: { id: 'singleton', ratePerMinuteCents: 30, provider: 'SQUARE' } });
+  await prisma.paymentSettings.create({ data: { ratePerMinuteCents: 30, provider: 'SQUARE' } });
   const charge = await createChargeForTransaction(station.id, 91);
   await prisma.charge.update({ where: { id: charge.id }, data: { provider: 'SQUARE', providerRef: 'order_abc' } });
   return charge;
@@ -39,10 +39,12 @@ async function pendingSquareCharge() {
 describe('Square', () => {
   beforeEach(async () => {
     await resetDb();
-    config.square.accessToken = 'EAAA-test';
-    config.square.locationId = 'LOC123';
-    config.square.webhookSignatureKey = KEY;
-    config.square.webhookUrl = URL_;
+    await setSiteSettings({
+      'square.accessToken': 'EAAA-test',
+      'square.locationId': 'LOC123',
+      'square.webhookSignatureKey': KEY,
+      'square.webhookUrl': URL_,
+    });
   });
 
   it('rejects a webhook whose signature does not match', async () => {
@@ -89,7 +91,7 @@ describe('Square', () => {
 
   it('refuses to start a Square payment when Square is not the active provider', async () => {
     const charge = await pendingSquareCharge();
-    await prisma.paymentSettings.update({ where: { id: 'singleton' }, data: { provider: 'NONE' } });
+    await prisma.paymentSettings.update({ where: { tenantId: 'default' }, data: { provider: 'NONE' } });
     const res = await request(app).post(`/api/pay/${charge.token}/square`);
     assert.equal(res.status, 409);
   });

@@ -4,6 +4,7 @@ import { registry } from '../services/stationRegistry.js';
 import { joinQueue } from '../services/queueService.js';
 import { tryDispatchStation } from '../services/dispatcher.js';
 import { getSettings, validateIdentifiers } from '../services/settingsService.js';
+import { roamingWarningError } from '../services/roaming.js';
 
 export const stationsRouter = Router();
 
@@ -61,6 +62,9 @@ stationsRouter.post('/:id/waitlist', async (req, res) => {
   if (station.zoneId) {
     return res.status(400).json({ error: 'This charger is part of a zone -- join the zone waitlist instead' });
   }
+
+  const roamingError = await roamingWarningError(req.body);
+  if (roamingError) return res.status(roamingError.status).json(roamingError.body);
 
   const entry = await joinQueue({ stationId: station.id }, { name, contact, licensePlate, parkingPermit });
 

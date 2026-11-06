@@ -6,7 +6,7 @@ import { app } from './support/testApp.js';
 import { resetDb } from './support/db.js';
 import { createAdmin } from './support/factories.js';
 import { prisma } from '../src/db.js';
-import { config } from '../src/config.js';
+import { setSiteSettings } from './support/siteSettings.js';
 import { computeCharge, isInPeakWindow } from '../src/services/payments/pricing.js';
 import { createChargeForTransaction } from '../src/services/payments/chargeService.js';
 
@@ -87,10 +87,7 @@ describe('charges and payment links', () => {
   let adminToken;
   beforeEach(async () => {
     await resetDb();
-    delete config.stripe.secretKey;
-    config.stripe.secretKey = '';
-    config.stripe.webhookSecret = '';
-    config.braintree.merchantId = '';
+    await setSiteSettings({ 'stripe.secretKey': '', 'stripe.webhookSecret': '', 'braintree.merchantId': '' });
     const admin = await createAdmin();
     const { body } = await request(app).post('/api/auth/login').send({ email: admin.email, password: 'Password123!' });
     adminToken = body.token;
@@ -98,7 +95,7 @@ describe('charges and payment links', () => {
 
   it('creates a pending charge when a session stops, and charges only once', async () => {
     const station = await stationWithFinishedSession({ minutes: 10 });
-    await prisma.paymentSettings.create({ data: { id: 'singleton', ratePerMinuteCents: 25 } });
+    await prisma.paymentSettings.create({ data: { ratePerMinuteCents: 25 } });
     const first = await createChargeForTransaction(station.id, 77);
     assert.equal(first.status, 'PENDING');
     assert.equal(first.amountCents, 250);
@@ -156,8 +153,7 @@ describe('charges and payment links', () => {
   });
 
   it('rejects a Stripe webhook without a valid signature', async () => {
-    config.stripe.secretKey = 'sk_test_fake';
-    config.stripe.webhookSecret = 'whsec_test_secret';
+    await setSiteSettings({ 'stripe.secretKey': 'sk_test_fake', 'stripe.webhookSecret': 'whsec_test_secret' });
     const res = await request(app)
       .post('/api/payments/stripe/webhook')
       .set('Content-Type', 'application/json')
@@ -167,10 +163,9 @@ describe('charges and payment links', () => {
   });
 
   it('marks a charge PAID from a correctly signed Stripe checkout completion', async () => {
-    config.stripe.secretKey = 'sk_test_fake';
-    config.stripe.webhookSecret = 'whsec_test_secret';
+    await setSiteSettings({ 'stripe.secretKey': 'sk_test_fake', 'stripe.webhookSecret': 'whsec_test_secret' });
     const station = await stationWithFinishedSession();
-    await prisma.paymentSettings.create({ data: { id: 'singleton', ratePerMinuteCents: 20, provider: 'STRIPE' } });
+    await prisma.paymentSettings.create({ data: { ratePerMinuteCents: 20, provider: 'STRIPE' } });
     const charge = await createChargeForTransaction(station.id, 77);
 
     const payload = JSON.stringify({

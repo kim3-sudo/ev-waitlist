@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { saveRuntimeSettings, runtimeSettingsView } from '../services/runtimeConfig.js';
 import { providerStatus, getStripe, getBraintreeGateway, getSquare } from '../services/payments/providers.js';
-import { config } from '../config.js';
+import { siteConfig } from '../services/runtimeConfig.js';
 
 // Mounted behind integrations.manage. Payment provider keys only.
 export const adminIntegrationsRouter = Router();
@@ -32,8 +32,8 @@ const TESTS = {
     return 'Connected to Braintree.';
   },
   SQUARE: async () => {
-    const response = await getSquare().locations.get({ locationId: config.square.locationId });
-    return `Connected to Square location "${response.location?.name ?? config.square.locationId}".`;
+    const response = await getSquare().locations.get({ locationId: siteConfig().square.locationId });
+    return `Connected to Square location "${response.location?.name ?? siteConfig().square.locationId}".`;
   },
 };
 

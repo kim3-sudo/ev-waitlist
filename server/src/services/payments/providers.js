@@ -1,14 +1,14 @@
 import Stripe from 'stripe';
 import braintree from 'braintree';
 import { SquareClient, SquareEnvironment } from 'square';
-import { config } from '../../config.js';
+import { siteConfig } from '../runtimeConfig.js';
 
 function getPath(obj, path) {
   return path.split('.').reduce((o, part) => o?.[part], obj);
 }
 
-// Required fields per provider, as [setting key, label]. Keys are saved in the
-// database through the Integrations admin page (see services/runtimeConfig.js).
+// Required fields per provider, as [setting key, label]. Keys are saved per site
+// through the Integrations admin page (see services/runtimeConfig.js).
 const REQUIRED = {
   STRIPE: [['stripe.secretKey', 'Secret key'], ['stripe.webhookSecret', 'Webhook signing secret']],
   BRAINTREE: [['braintree.merchantId', 'Merchant ID'], ['braintree.publicKey', 'Public key'], ['braintree.privateKey', 'Private key']],
@@ -16,6 +16,7 @@ const REQUIRED = {
 };
 
 export function providerStatus() {
+  const config = siteConfig();
   const status = {};
   for (const [provider, fields] of Object.entries(REQUIRED)) {
     const missing = fields.filter(([key]) => !getPath(config, key)).map(([, label]) => label);
@@ -28,44 +29,45 @@ export function isProviderConfigured(provider) {
   return Boolean(providerStatus()[provider]?.configured);
 }
 
-let stripeClient = null;
-let stripeKey = null;
+// Clients are cached per set of credentials, so sites with different accounts
+// each keep their own client.
+const stripeClients = new Map();
 export function getStripe() {
-  if (!stripeClient || stripeKey !== config.stripe.secretKey) {
-    stripeKey = config.stripe.secretKey;
-    stripeClient = new Stripe(stripeKey);
-  }
-  return stripeClient;
+  const key = siteConfig().stripe.secretKey;
+  if (!stripeClients.has(key)) stripeClients.set(key, new Stripe(key));
+  return stripeClients.get(key);
 }
 
-let gateway = null;
-let gatewayKey = null;
+const gateways = new Map();
 export function getBraintreeGateway() {
-  const { environment, merchantId, publicKey, privateKey } = config.braintree;
+  const { environment, merchantId, publicKey, privateKey } = siteConfig().braintree;
   const key = `${environment}|${merchantId}|${publicKey}|${privateKey}`;
-  if (!gateway || gatewayKey !== key) {
-    gatewayKey = key;
-    gateway = new braintree.BraintreeGateway({
-      environment: environment === 'production' ? braintree.Environment.Production : braintree.Environment.Sandbox,
-      merchantId,
-      publicKey,
-      privateKey,
-    });
+  if (!gateways.has(key)) {
+    gateways.set(
+      key,
+      new braintree.BraintreeGateway({
+        environment: environment === 'production' ? braintree.Environment.Production : braintree.Environment.Sandbox,
+        merchantId,
+        publicKey,
+        privateKey,
+      }),
+    );
   }
-  return gateway;
+  return gateways.get(key);
 }
 
-let squareClient = null;
-let squareKey = null;
+const squareClients = new Map();
 export function getSquare() {
-  const { accessToken, environment } = config.square;
+  const { accessToken, environment } = siteConfig().square;
   const key = `${environment}|${accessToken}`;
-  if (!squareClient || squareKey !== key) {
-    squareKey = key;
-    squareClient = new SquareClient({
-      token: accessToken,
-      environment: environment === 'production' ? SquareEnvironment.Production : SquareEnvironment.Sandbox,
-    });
+  if (!squareClients.has(key)) {
+    squareClients.set(
+      key,
+      new SquareClient({
+        token: accessToken,
+        environment: environment === 'production' ? SquareEnvironment.Production : SquareEnvironment.Sandbox,
+      }),
+    );
   }
-  return squareClient;
+  return squareClients.get(key);
 }

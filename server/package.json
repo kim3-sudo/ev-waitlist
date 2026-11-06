@@ -11,6 +11,8 @@
     "db:seed": "node prisma/seed.js",
     "db:setup": "node scripts/prisma.mjs generate && node scripts/prisma.mjs migrate deploy && node prisma/seed.js",
     "db:seed-simulator": "node prisma/seedSimulator.js",
+    "db:build-schemas": "node scripts/build-schemas.mjs",
+    "db:check-schemas": "node scripts/build-schemas.mjs --check",
     "simulate": "node src/simulator/chargePoint.js",
     "simulate:idp": "node src/simulator/samlIdp.js",
     "test": "node --import ./test/env.setup.js --test --test-concurrency=1 test/*.test.js"

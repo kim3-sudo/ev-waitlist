@@ -1,0 +1,511 @@
+// GENERATED from prisma/schema.prisma by scripts/build-schemas.mjs. Do not edit.
+// Provider: postgresql
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Single row (id always "singleton") for the whole installation: the operator
+// that runs it. Its country code and party ID are used only by OCPI, and are
+// blank until an operator sets them.
+model Operator {
+  id          String   @id @default("singleton")
+  name        String   @default("")
+  countryCode String   @default("")
+  partyId     String   @default("")
+  updatedAt   DateTime @updatedAt
+}
+
+// A site. Every tenant-scoped row belongs to exactly one site. An installation
+// with a single site uses the tenant with id "default" and never sees the
+// tenant concept in the UI.
+model Tenant {
+  id   String @id @default(cuid())
+  slug String @unique
+  name String
+
+  // Roaming (OCPI) is off until the admin acknowledges the roaming terms.
+  roamingEnabled                  Boolean   @default(false)
+  roamingTermsAcknowledgedAt      DateTime?
+  roamingTermsAcknowledgedBy      String?
+  roamingTermsAcknowledgedVersion String?
+  // Extra text the site adds to the roaming warning. The required core text is always shown.
+  roamingWarningExtra String?
+
+  // Retention, in days after a queue entry closes (personal data).
+  queueRetentionDays Int @default(30)
+  // Retention, in days, for payer details on charges. Null keeps them indefinitely.
+  financialRetentionDays Int? @default(30)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  admins                Admin[]
+  customRoles           CustomRole[]
+  zones                 Zone[]
+  stations              Station[]
+  queueEntries          QueueEntry[]
+  reservations          Reservation[]
+  transactions          Transaction[]
+  charges               Charge[]
+  idleEvents            IdleEvent[]
+  lineCuttingComplaints LineCuttingComplaint[]
+  settings              Settings?
+  paymentSettings       PaymentSettings?
+  samlConfig            SamlConfig?
+  configValues          ConfigValue[]
+  ocpiPartners          OcpiPartner[]
+  ocpiTokens            OcpiToken[]
+  ocpiOutbox            OcpiOutbox[]
+  paymentHolds          PaymentHold[]
+}
+
+model Admin {
+  id           String   @id @default(cuid())
+  tenant       Tenant   @relation(fields: [tenantId], references: [id])
+  tenantId     String
+  email        String   @unique
+  // Null for SSO-only accounts that authenticate exclusively via SAML.
+  passwordHash String?
+  mfaSecret    String?
+  mfaEnabled   Boolean  @default(false)
+  // Set on the auto-generated first-run admin. Blocks all admin API access
+  // until the password is changed.
+  mustChangePassword Boolean @default(false)
+  // Role name: a built-in role (ADMIN, VIEWER -- see auth/permissions.js) or
+  // the name of a CustomRole in the same site. Permissions are resolved from it on each request.
+  role         String   @default("ADMIN")
+  // The installation administrator (the person who set up the software). Only this
+  // account can create and manage sites.
+  instanceAdmin Boolean @default(false)
+  createdAt    DateTime @default(now())
+
+  @@index([tenantId])
+}
+
+// One row per site (keyed by tenant): white-label branding and
+// waitlist-identifier configuration.
+model Settings {
+  tenant         Tenant   @relation(fields: [tenantId], references: [id])
+  tenantId       String   @id
+  companyName    String   @default("EV Waitlist")
+  logoUrl        String?
+  primaryColor   String   @default("#0d7a5f")
+  secondaryColor String   @default("#1565c0")
+  fontFamily     String?
+  // LICENSE_PLATE | PARKING_PERMIT | BOTH -- which identifier(s) the public
+  // waitlist join form collects.
+  identifierMode String   @default("LICENSE_PLATE")
+  // When true, admin accounts without MFA enabled are forced to enroll
+  // (TOTP) the next time they log in.
+  mfaRequired    Boolean  @default(false)
+  // False until the first-run setup wizard (first charge point + branding)
+  // is completed or skipped.
+  setupCompleted Boolean  @default(false)
+  updatedAt      DateTime @updatedAt
+}
+
+// One row per site: the site's SAML service-provider configuration for a
+// single external identity provider.
+model SamlConfig {
+  tenant         Tenant   @relation(fields: [tenantId], references: [id])
+  tenantId       String   @id
+  enabled        Boolean  @default(false)
+  idpEntityId    String?
+  idpSsoUrl      String?
+  idpCertificate String?
+  // When true, a SAML assertion for an email with no matching Admin
+  // auto-creates an SSO-only account. When false, that login is rejected.
+  autoProvision  Boolean  @default(false)
+  updatedAt      DateTime @updatedAt
+}
+
+// A group of stations (e.g. "Parking Garage P1") that share a single
+// waitlist -- whichever station in the zone frees a connector first serves
+// the next person in the zone's line, rather than each station keeping its
+// own separate line.
+model Zone {
+  id        String   @id @default(cuid())
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  tenantId  String
+  name      String
+  createdAt DateTime @default(now())
+
+  stations    Station[]
+  queueEntries QueueEntry[]
+
+  @@unique([tenantId, name])
+}
+
+model Station {
+  id        String   @id @default(cuid())
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  tenantId  String
+  // OCPP "identity" -- the charge point ID used in the websocket URL
+  // (ws://host:port/ocpp/<identity>) and in every OCPP message exchange.
+  identity  String   @unique
+  name      String
+  vendor    String?
+  model     String?
+  location  String?
+  // Coordinates shown to roaming partners. Blank stations are not published.
+  latitude  Float?
+  longitude Float?
+  // Null for a standalone station with its own waitlist.
+  zone      Zone?    @relation(fields: [zoneId], references: [id])
+  zoneId    String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  connectors        Connector[]
+  queueEntries      QueueEntry[]
+  reservations      Reservation[]
+  transactions      Transaction[]
+  lineCuttingComplaints LineCuttingComplaint[]
+  idleEvents        IdleEvent[]
+  charges           Charge[]
+
+  @@index([tenantId])
+}
+
+model Connector {
+  id          String   @id @default(cuid())
+  station     Station  @relation(fields: [stationId], references: [id], onDelete: Cascade)
+  stationId   String
+  // OCPP connectorId (0 = whole station, 1..n = physical connectors)
+  connectorId Int
+  status      String   @default("Unavailable")
+  errorCode   String?
+  // Connector details published to roaming partners (OCPI). Blank until entered; a
+  // station is only published once all its connectors have them.
+  standard    String?
+  format      String?
+  powerType   String?
+  maxVoltage  Int?
+  maxAmperage Int?
+  updatedAt   DateTime @updatedAt
+
+  @@unique([stationId, connectorId])
+}
+
+// A person waiting in line for a station -- or, for a zoned station, for the
+// zone as a whole. Independent of which physical connector they eventually
+// get -- the dispatcher assigns that at match time.
+//
+// Exactly one of (stationId, zoneId) is set at join time: joining a
+// standalone station's waitlist sets stationId; joining a zone's shared
+// waitlist sets zoneId instead, and stationId is filled in once the
+// dispatcher matches the entry to a specific station's freed connector.
+model QueueEntry {
+  id            String   @id @default(cuid())
+  tenant        Tenant   @relation(fields: [tenantId], references: [id])
+  tenantId      String
+  station       Station? @relation(fields: [stationId], references: [id], onDelete: Cascade)
+  stationId     String?
+  zone          Zone?    @relation(fields: [zoneId], references: [id], onDelete: Cascade)
+  zoneId        String?
+  name          String
+  contact       String
+  idTag         String
+  licensePlate  String?
+  parkingPermit String?
+  // WAITING -> NOTIFIED -> COMPLETED
+  //         -> EXPIRED / CANCELLED
+  status        String   @default("WAITING")
+  position      Int
+  createdAt     DateTime @default(now())
+  // Set when the entry reaches COMPLETED, EXPIRED or CANCELLED. Retention is counted from here.
+  closedAt      DateTime?
+
+  reservation       Reservation?
+  lineCuttingComplaints LineCuttingComplaint[]
+
+  @@index([tenantId])
+}
+
+// A hold placed on a specific connector for a specific queue entry, mirrored
+// (when the station supports it) by an OCPP ReserveNow call.
+model Reservation {
+  id                String    @id @default(cuid())
+  tenant            Tenant    @relation(fields: [tenantId], references: [id])
+  tenantId          String
+  queueEntry        QueueEntry @relation(fields: [queueEntryId], references: [id], onDelete: Cascade)
+  queueEntryId      String    @unique
+  station           Station   @relation(fields: [stationId], references: [id], onDelete: Cascade)
+  stationId         String
+  connectorId       Int
+  // Null when the charge point doesn't support ReserveNow and we fall back
+  // to a soft (app-only) hold.
+  ocppReservationId Int?
+  expiresAt         DateTime
+  // ACTIVE -> FULFILLED / EXPIRED / CANCELLED
+  status            String    @default("ACTIVE")
+  createdAt         DateTime  @default(now())
+
+  @@index([tenantId])
+}
+
+// A driver's complaint that someone else took their spot at a station
+// (e.g. plugged in without having been notified/reserved). Surfaced to
+// admins to review and act on manually. Table name is kept from the older
+// "LineCutterReport" model.
+model LineCuttingComplaint {
+  id           String     @id @default(cuid())
+  tenant       Tenant     @relation(fields: [tenantId], references: [id])
+  tenantId     String
+  station      Station    @relation(fields: [stationId], references: [id], onDelete: Cascade)
+  stationId    String
+  queueEntry   QueueEntry @relation(fields: [queueEntryId], references: [id], onDelete: Cascade)
+  queueEntryId String
+  note         String?
+  // OPEN -> RESOLVED / DISMISSED
+  status       String     @default("OPEN")
+  createdAt    DateTime   @default(now())
+  // Set when the complaint leaves OPEN; cleared if it is reopened.
+  resolvedAt   DateTime?
+
+  @@index([tenantId])
+  @@map("LineCutterReport")
+}
+
+model Transaction {
+  id                String    @id @default(cuid())
+  tenant            Tenant    @relation(fields: [tenantId], references: [id])
+  tenantId          String
+  station           Station   @relation(fields: [stationId], references: [id], onDelete: Cascade)
+  stationId         String
+  connectorId       Int
+  idTag             String
+  ocppTransactionId Int
+  meterStart        Int?
+  meterStop         Int?
+  startedAt         DateTime  @default(now())
+  stoppedAt         DateTime?
+  charge            Charge?
+  // The roaming partner whose token started this session, if any. Roaming sessions are
+  // billed by the partner through a CDR, not by a payment link.
+  partnerId         String?
+
+  @@index([tenantId])
+}
+
+// A stretch of time a connector sat occupied after the session was over
+// (status Finishing, or SuspendedEV with no open transaction) -- i.e. a car
+// still plugged in once charging has finished. endedAt is null while ongoing.
+model IdleEvent {
+  id          String    @id @default(cuid())
+  tenant      Tenant    @relation(fields: [tenantId], references: [id])
+  tenantId    String
+  station     Station   @relation(fields: [stationId], references: [id], onDelete: Cascade)
+  stationId   String
+  connectorId Int
+  startedAt   DateTime  @default(now())
+  endedAt     DateTime?
+
+  @@index([stationId, connectorId, endedAt])
+  @@index([tenantId])
+}
+
+// A named set of permissions an admin can assign to users (e.g. "Electrician").
+// The built-in ADMIN and VIEWER roles are defined in code, not stored here.
+model CustomRole {
+  id          String   @id @default(cuid())
+  tenant      Tenant   @relation(fields: [tenantId], references: [id])
+  tenantId    String
+  name        String
+  description String?
+  // JSON array of permission keys from auth/permissions.js.
+  permissions String   @default("[]")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([tenantId, name])
+}
+
+// One row per site: how drivers are charged and who collects payment.
+model PaymentSettings {
+  tenant                      Tenant    @relation(fields: [tenantId], references: [id])
+  tenantId                    String    @id
+  // TIME (per minute) | ENERGY (per kWh dispensed) | FREE (drivers are not charged)
+  pricingModel                String    @default("TIME")
+  // ISO 4217 code, e.g. USD
+  currency                    String    @default("USD")
+  ratePerMinuteCents          Int       @default(0)
+  // Legacy single peak window, used only while rateSchedule is null (sites that
+  // have not saved the schedule yet). Saving a schedule clears these.
+  peakRatePerMinuteCents      Int?
+  peakStartHour               Int?
+  peakEndHour                 Int?
+  ratePerKwhCents             Int       @default(0)
+  // Set when an admin confirms they checked local rules on reselling power.
+  energyPricingAcknowledgedAt DateTime?
+  // NONE | STRIPE | BRAINTREE | SQUARE
+  provider                    String    @default("NONE")
+  // Time-of-day rates: a JSON list of { days: [0-6, 0 = Sunday], startHour, endHour, rate }.
+  // The rate is in the pricing model's unit (cents per minute, or cents per kWh).
+  // Minutes not covered by a rule use the base rate. See services/payments/rates.js.
+  rateSchedule                String?
+  // Charger power used to turn a per-minute rate into a per-kWh price for the price check.
+  referencePowerKw            Float?
+  // Inputs to the rate calculator (JSON). Kept so the price check can use the cost basis.
+  rateCalculatorInputs        String?
+  // Pre-authorization: the amount held on a waitlisted driver's card before they
+  // start. Null turns holds off. The session is captured at its actual amount.
+  preauthCents                Int?
+  updatedAt                   DateTime  @updatedAt
+}
+
+// The amount owed for one finished charging transaction.
+model Charge {
+  id              String      @id @default(cuid())
+  tenant          Tenant      @relation(fields: [tenantId], references: [id])
+  tenantId        String
+  // Unguessable token in the public payment link (/pay/<token>).
+  token           String      @unique
+  station         Station     @relation(fields: [stationId], references: [id], onDelete: Cascade)
+  stationId       String
+  transaction     Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  transactionId   String      @unique
+  idTag           String
+  payerName       String?
+  payerContact    String?
+  pricingModel    String
+  currency        String
+  amountCents     Int
+  durationSeconds Int
+  energyWh        Int?
+  // PENDING -> PAID. NEEDS_REVIEW: no meter reading to bill from.
+  // NO_CHARGE: amount came to zero.
+  status          String      @default("PENDING")
+  // Provider used for the most recent payment attempt, and its reference
+  // (Stripe Checkout Session ID or Braintree transaction ID).
+  provider        String?
+  providerRef     String?
+  paidAt          DateTime?
+  // Amount already captured from a pre-authorization hold. amountCents is then
+  // only the balance still owed (the session cost minus this amount).
+  holdCapturedCents Int       @default(0)
+  createdAt       DateTime    @default(now())
+
+  @@index([tenantId])
+}
+
+// A card hold placed before a waitlisted driver starts charging (pre-authorization).
+// The hold is captured at the session's actual cost when it stops, and released if
+// the session never starts.
+model PaymentHold {
+  id           String   @id @default(cuid())
+  tenant       Tenant   @relation(fields: [tenantId], references: [id])
+  tenantId     String
+  // Unguessable token in the public hold link (/pay/hold/<token>).
+  token        String   @unique
+  idTag        String
+  payerName    String?
+  payerContact String?
+  amountCents  Int
+  currency     String
+  // AWAITING (link sent, card not yet held) -> HELD -> IN_USE (session started)
+  // -> CAPTURED. RELEASED: the hold was let go. FAILED: the provider refused it.
+  status       String   @default("AWAITING")
+  provider     String?
+  // Stripe Checkout Session ID while the driver is on the hosted page.
+  sessionRef   String?
+  // Stripe PaymentIntent ID, or Braintree transaction ID.
+  providerRef  String?
+  transactionId String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([tenantId])
+  @@index([tenantId, idTag])
+}
+
+// Runtime settings edited in the admin UI, one row per site and key (public
+// URLs, reservation window, payment provider keys). Secret values are stored
+// encrypted (see utils/secretBox.js), never in plain text.
+model ConfigValue {
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  tenantId  String
+  key       String
+  value     String
+  updatedAt DateTime @updatedAt
+
+  @@id([tenantId, key])
+}
+
+// A roaming partner (an e-mobility provider) registered with this site. The
+// tokens are hashed, except the one we send to the partner, which is encrypted
+// because we need to send it again.
+model OcpiPartner {
+  id                    String   @id @default(cuid())
+  tenant                Tenant   @relation(fields: [tenantId], references: [id])
+  tenantId              String
+  name                  String
+  // PENDING (invited, waiting for credentials) -> ACTIVE -> REVOKED
+  status                String   @default("PENDING")
+  registrationTokenHash String?  @unique
+  // The token the partner must send us. Only its hash is stored.
+  ourTokenHash          String?  @unique
+  // The token we send the partner (encrypted), and where to reach them.
+  theirTokenEnc         String?
+  theirVersionsUrl      String?
+  theirCountryCode      String?
+  theirPartyId          String?
+  // JSON map of "<identifier>:<ROLE>" -> URL, from the partner's version details.
+  endpoints             String   @default("{}")
+  lastError             String?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  tokens  OcpiToken[]
+  outbox  OcpiOutbox[]
+
+  @@index([tenantId])
+}
+
+// A driver token the partner pushed to us (OCPI Tokens module).
+model OcpiToken {
+  id          String      @id @default(cuid())
+  tenant      Tenant      @relation(fields: [tenantId], references: [id])
+  tenantId    String
+  partner     OcpiPartner @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  partnerId   String
+  uid         String
+  type        String
+  contractId  String
+  country     String
+  party       String
+  valid       Boolean     @default(true)
+  whitelist   String      @default("ALLOWED")
+  lastUpdated DateTime
+
+  @@unique([partnerId, uid])
+  @@index([tenantId])
+}
+
+// Messages waiting to be sent to a partner. The body is built from the database
+// when the message is sent, so it always reflects the latest state.
+model OcpiOutbox {
+  id            String      @id @default(cuid())
+  tenant        Tenant      @relation(fields: [tenantId], references: [id])
+  tenantId      String
+  partner       OcpiPartner @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  partnerId     String
+  // SESSION | CDR | TARIFFS | EVSE_STATUS
+  kind          String
+  refId         String
+  // PENDING -> DONE, or FAILED after too many attempts
+  status        String      @default("PENDING")
+  attempts      Int         @default(0)
+  nextAttemptAt DateTime    @default(now())
+  lastError     String?
+  createdAt     DateTime    @default(now())
+
+  @@index([status, nextAttemptAt])
+  @@index([tenantId])
+}

@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { getQueueStatus } from '../services/queueService.js';
 import { cancelQueueEntry, requestStartCharging, reportLineCutter } from '../services/dispatcher.js';
+import { tenantForQueueEntry } from '../tenancy/middleware.js';
 
 export const waitlistRouter = Router();
 
@@ -31,19 +32,19 @@ function serializeEntry({ entry, position }) {
   };
 }
 
-waitlistRouter.get('/:id', async (req, res) => {
+waitlistRouter.get('/:id', tenantForQueueEntry, async (req, res) => {
   const result = await getQueueStatus(req.params.id);
   if (!result) return res.status(404).json({ error: 'Waitlist entry not found' });
   res.json(serializeEntry(result));
 });
 
-waitlistRouter.delete('/:id', async (req, res) => {
+waitlistRouter.delete('/:id', tenantForQueueEntry, async (req, res) => {
   const entry = await cancelQueueEntry(req.params.id);
   if (!entry) return res.status(404).json({ error: 'Waitlist entry not found' });
   res.json({ id: entry.id, status: entry.status });
 });
 
-waitlistRouter.post('/:id/start-charging', async (req, res) => {
+waitlistRouter.post('/:id/start-charging', tenantForQueueEntry, async (req, res) => {
   try {
     await requestStartCharging(req.params.id);
     res.json({ ok: true });
@@ -52,7 +53,7 @@ waitlistRouter.post('/:id/start-charging', async (req, res) => {
   }
 });
 
-waitlistRouter.post('/:id/report-line-cutter', async (req, res) => {
+waitlistRouter.post('/:id/report-line-cutter', tenantForQueueEntry, async (req, res) => {
   try {
     const report = await reportLineCutter(req.params.id, req.body?.note);
     res.status(201).json({ id: report.id });

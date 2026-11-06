@@ -24,6 +24,11 @@ import { AdminPaymentsPage } from './pages/AdminPaymentsPage.jsx';
 import { AdminIntegrationsPage } from './pages/AdminIntegrationsPage.jsx';
 import { AdminSystemPage } from './pages/AdminSystemPage.jsx';
 import { PayPage } from './pages/PayPage.jsx';
+import { PayHoldPage } from './pages/PayHoldPage.jsx';
+import { SiteScope } from './components/SiteScope.jsx';
+import { AdminSitesPage } from './pages/AdminSitesPage.jsx';
+import { AdminPrivacyPage } from './pages/AdminPrivacyPage.jsx';
+import { AdminRoamingPage } from './pages/AdminRoamingPage.jsx';
 
 export default function App() {
   return (
@@ -33,7 +38,16 @@ export default function App() {
         <Route path="/" element={<PublicWaitlistPage />} />
         <Route path="/login" element={<LoginPage />} />
         <Route path="/sso/callback" element={<SsoCallbackPage />} />
+        <Route path="/pay/hold/:token" element={<PayHoldPage />} />
         <Route path="/pay/:token" element={<PayPage />} />
+        <Route
+          path="/t/:slug"
+          element={
+            <SiteScope>
+              <PublicWaitlistPage />
+            </SiteScope>
+          }
+        />
         <Route
           path="/change-password"
           element={
@@ -145,6 +159,30 @@ export default function App() {
             element={
               <PermissionRoute permission="system.manage">
                 <AdminSystemPage />
+              </PermissionRoute>
+            }
+          />
+          <Route
+            path="roaming"
+            element={
+              <PermissionRoute permission="roaming.manage">
+                <AdminRoamingPage />
+              </PermissionRoute>
+            }
+          />
+          <Route
+            path="privacy"
+            element={
+              <PermissionRoute permission="privacy.manage">
+                <AdminPrivacyPage />
+              </PermissionRoute>
+            }
+          />
+          <Route
+            path="sites"
+            element={
+              <PermissionRoute permission="sites.manage">
+                <AdminSitesPage />
               </PermissionRoute>
             }
           />

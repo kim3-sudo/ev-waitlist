@@ -2,20 +2,22 @@ import { WebhooksHelper } from 'square';
 import { prisma } from '../db.js';
 import { markChargePaid } from '../services/payments/chargeService.js';
 import { isProviderConfigured } from '../services/payments/providers.js';
-import { config } from '../config.js';
+import { siteConfig } from '../services/runtimeConfig.js';
 
 // Square calls this for payment status changes. Mounted before express.json(),
-// because the signature is computed over the raw body. Requests whose signature
-// doesn't match are refused, so only Square can mark a charge paid this way.
+// because the signature is computed over the raw body. The request's site decides
+// the signature key and notification URL, so each site's Square account is
+// checked against its own key. Requests whose signature doesn't match are refused.
 export async function squareWebhookHandler(req, res) {
   if (!isProviderConfigured('SQUARE')) return res.status(404).end();
 
+  const site = siteConfig();
   const body = Buffer.isBuffer(req.body) ? req.body.toString('utf8') : '';
   const valid = await WebhooksHelper.verifySignature({
     requestBody: body,
     signatureHeader: req.headers['x-square-hmacsha256-signature'] ?? '',
-    signatureKey: config.square.webhookSignatureKey,
-    notificationUrl: config.square.webhookUrl,
+    signatureKey: site.square.webhookSignatureKey,
+    notificationUrl: site.square.webhookUrl,
   }).catch(() => false);
   if (!valid) return res.status(400).send('Invalid signature');
 
@@ -30,8 +32,10 @@ export async function squareWebhookHandler(req, res) {
     const payment = event.data?.object?.payment;
     if (payment?.status === 'COMPLETED' && payment.orderId) {
       // The charge was linked to this order when its payment link was created.
+      // Only this site's charges are searched.
       const charge = await prisma.charge.findFirst({
         where: { provider: 'SQUARE', providerRef: payment.orderId, status: 'PENDING' },
+        select: { id: true },
       });
       if (charge) await markChargePaid(charge.id, { provider: 'SQUARE', providerRef: payment.id });
     }

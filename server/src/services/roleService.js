@@ -14,15 +14,20 @@ function parsePermissions(json) {
 
 // Permission keys for a role name. Unknown names (e.g. a role deleted while
 // someone still holds it) grant nothing.
+// A custom role in the current site, by name. Names are unique per site, not globally.
+export function findCustomRole(name) {
+  return prisma.customRole.findFirst({ where: { name } });
+}
+
 export async function resolvePermissions(roleName) {
   if (BUILT_IN_ROLE_NAMES.includes(roleName)) return BUILT_IN_ROLES[roleName].permissions;
-  const custom = await prisma.customRole.findUnique({ where: { name: roleName } });
+  const custom = await findCustomRole(roleName);
   return custom ? parsePermissions(custom.permissions) : [];
 }
 
 export async function roleExists(roleName) {
   if (BUILT_IN_ROLE_NAMES.includes(roleName)) return true;
-  return Boolean(await prisma.customRole.findUnique({ where: { name: roleName } }));
+  return Boolean(await findCustomRole(roleName));
 }
 
 export async function listRoles() {
@@ -89,10 +94,10 @@ export async function createRole(data) {
 }
 
 export async function updateRole(name, data) {
-  const row = await prisma.customRole.findUnique({ where: { name } });
+  const row = await findCustomRole(name);
   if (!row) return null;
   return prisma.customRole.update({
-    where: { name },
+    where: { id: row.id },
     data: {
       ...(data.description !== undefined && { description: data.description || null }),
       ...(data.permissions !== undefined && { permissions: JSON.stringify(data.permissions) }),

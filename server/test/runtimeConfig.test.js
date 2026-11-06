@@ -7,7 +7,7 @@ import { createAdmin } from './support/factories.js';
 import { prisma } from '../src/db.js';
 import { config } from '../src/config.js';
 import { encryptSecret, decryptSecret } from '../src/utils/secretBox.js';
-import { initRuntimeConfig, validateValue } from '../src/services/runtimeConfig.js';
+import { initRuntimeConfig, validateValue, siteConfig } from '../src/services/runtimeConfig.js';
 import { spEntityId } from '../src/services/samlService.js';
 
 async function login(email) {
@@ -52,16 +52,16 @@ describe('integrations (payment provider keys)', () => {
     assert.equal(res.body.secretsSet['stripe.secretKey'], true);
     assert.equal(JSON.stringify(res.body).includes('sk_test_visible_never'), false);
 
-    const row = await prisma.configValue.findUnique({ where: { key: 'stripe.secretKey' } });
+    const row = await prisma.configValue.findFirst({ where: { key: 'stripe.secretKey' } });
     assert.equal(row.value.includes('sk_test_visible_never'), false);
-    assert.equal(config.stripe.secretKey, 'sk_test_visible_never');
+    assert.equal(siteConfig().stripe.secretKey, 'sk_test_visible_never');
   });
 
   it('clears a secret when it is saved as an empty string', async () => {
     await as(adminToken)(request(app).put('/api/admin/integrations')).send({ 'stripe.secretKey': 'sk_test_1' });
     const res = await as(adminToken)(request(app).put('/api/admin/integrations')).send({ 'stripe.secretKey': '' });
     assert.equal(res.body.secretsSet['stripe.secretKey'], false);
-    assert.equal(config.stripe.secretKey, '');
+    assert.equal(siteConfig().stripe.secretKey, '');
   });
 
   it('refuses to save a secret when no encryption key is configured', async () => {
@@ -120,7 +120,7 @@ describe('system settings', () => {
     assert.equal(badWindow.status, 400);
     const good = await as(adminToken)(request(app).put('/api/admin/system')).send({ reservationWindowMinutes: 20 });
     assert.equal(good.body.values.reservationWindowMinutes, 20);
-    assert.equal(config.reservationWindowMinutes, 20);
+    assert.equal(siteConfig().reservationWindowMinutes, 20);
   });
 
   it("does not let a system-only change touch provider keys", async () => {
@@ -130,7 +130,7 @@ describe('system settings', () => {
 
   it('derives the Square webhook URL from the public URL when left blank', async () => {
     await as(adminToken)(request(app).put('/api/admin/system')).send({ publicUrl: 'https://ev.example.com' });
-    assert.equal(config.square.webhookUrl, 'https://ev.example.com/api/payments/square/webhook');
+    assert.equal(siteConfig().square.webhookUrl, 'https://ev.example.com/api/payments/square/webhook');
   });
 });
 
@@ -146,16 +146,16 @@ describe('one-time import from environment variables', () => {
     process.env.STRIPE_SECRET_KEY = 'sk_test_from_env';
     process.env.RESERVATION_WINDOW_MINUTES = '25';
     await initRuntimeConfig();
-    assert.equal(config.stripe.secretKey, 'sk_test_from_env');
-    assert.equal(config.reservationWindowMinutes, 25);
-    const row = await prisma.configValue.findUnique({ where: { key: 'stripe.secretKey' } });
+    assert.equal(siteConfig().stripe.secretKey, 'sk_test_from_env');
+    assert.equal(siteConfig().reservationWindowMinutes, 25);
+    const row = await prisma.configValue.findFirst({ where: { key: 'stripe.secretKey' } });
     assert.equal(row.value.includes('sk_test_from_env'), false, 'imported secret is encrypted');
 
     // A later change in the database wins over the env value still in the environment.
     await as(adminToken)(request(app).put('/api/admin/system')).send({ reservationWindowMinutes: 30 });
     process.env.RESERVATION_WINDOW_MINUTES = '99';
     await initRuntimeConfig();
-    assert.equal(config.reservationWindowMinutes, 30);
+    assert.equal(siteConfig().reservationWindowMinutes, 30);
   });
 });
 

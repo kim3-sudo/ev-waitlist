@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Dialog,
   DialogTitle,
@@ -8,6 +8,10 @@ import {
   Button,
   Stack,
   Alert,
+  Checkbox,
+  FormControlLabel,
+  Paper,
+  Typography,
 } from '@mui/material';
 import { api } from '../api/client.js';
 import { useSettings } from '../context/SettingsContext.jsx';
@@ -24,6 +28,18 @@ export function WaitlistJoinDialog({ target, onClose, onJoined }) {
   const [parkingPermit, setParkingPermit] = useState('');
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  // Roaming: when the site has it on, the warning must be read and accepted.
+  const [roaming, setRoaming] = useState(null);
+  const [warningAccepted, setWarningAccepted] = useState(false);
+
+  useEffect(() => {
+    api
+      .get('/api/settings/roaming')
+      .then(({ data }) => setRoaming(data))
+      .catch(() => setRoaming({ enabled: false }));
+  }, []);
+
+  const roamingOn = Boolean(roaming?.enabled);
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -42,6 +58,7 @@ export function WaitlistJoinDialog({ target, onClose, onJoined }) {
         contact,
         licensePlate: showPlate ? licensePlate : undefined,
         parkingPermit: showPermit ? parkingPermit : undefined,
+        roamingWarningAccepted: roamingOn ? warningAccepted : undefined,
       });
       onJoined({ entryId: data.id });
     } catch (err) {
@@ -92,11 +109,27 @@ export function WaitlistJoinDialog({ target, onClose, onJoined }) {
                 fullWidth
               />
             )}
+            {roamingOn && (
+              <Paper variant="outlined" sx={{ p: 2 }}>
+                <Stack spacing={1}>
+                  <Typography variant="subtitle2">Please read before joining</Typography>
+                  <Typography variant="body2" sx={{ whiteSpace: 'pre-line' }}>
+                    {roaming.warningText}
+                  </Typography>
+                  <FormControlLabel
+                    control={
+                      <Checkbox checked={warningAccepted} onChange={(e) => setWarningAccepted(e.target.checked)} required />
+                    }
+                    label="I have read and accept this warning"
+                  />
+                </Stack>
+              </Paper>
+            )}
           </Stack>
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2 }}>
           <Button onClick={onClose}>Cancel</Button>
-          <Button type="submit" variant="contained" disabled={submitting}>
+          <Button type="submit" variant="contained" disabled={submitting || (roamingOn && !warningAccepted)}>
             {submitting ? 'Joining…' : 'Join waitlist'}
           </Button>
         </DialogActions>

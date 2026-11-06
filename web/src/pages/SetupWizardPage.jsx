@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Navigate, useNavigate } from 'react-router-dom';
 import {
   Alert,
@@ -50,6 +50,16 @@ function BrandingStep({ onBack, onSkip, onSaved }) {
   }));
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  // The operator is the company running this installation. Only the installation
+  // administrator can set it, which is who runs the wizard.
+  const [operatorName, setOperatorName] = useState('');
+
+  useEffect(() => {
+    api
+      .get('/api/admin/operator')
+      .then(({ data }) => setOperatorName(data.name ?? ''))
+      .catch(() => {});
+  }, []);
 
   function update(field) {
     return (e) => setForm((f) => ({ ...f, [field]: e.target.value }));
@@ -73,6 +83,7 @@ function BrandingStep({ onBack, onSkip, onSaved }) {
     setSubmitting(true);
     try {
       await api.put('/api/admin/settings', { ...form, logoUrl: form.logoUrl || null });
+      if (operatorName.trim()) await api.put('/api/admin/operator', { name: operatorName.trim() }).catch(() => {});
       onSaved();
     } catch (err) {
       setError(err.response?.data?.error ?? 'Could not save branding.');
@@ -87,6 +98,13 @@ function BrandingStep({ onBack, onSkip, onSaved }) {
         This is what drivers see on the public waitlist page.
       </Typography>
       {error && <Alert severity="error">{error}</Alert>}
+      <TextField
+        label="Operator (the company running this installation)"
+        helperText="Shown on admin pages. You can change it later under Sites."
+        value={operatorName}
+        onChange={(e) => setOperatorName(e.target.value)}
+        fullWidth
+      />
       <TextField
         label="Company / product name"
         value={form.companyName}

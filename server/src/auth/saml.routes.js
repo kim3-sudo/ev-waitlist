@@ -3,6 +3,7 @@ import express from 'express';
 import jwt from 'jsonwebtoken';
 import { prisma } from '../db.js';
 import { config } from '../config.js';
+import { siteConfig } from '../services/runtimeConfig.js';
 import { buildSamlClient, getSamlConfig } from '../services/samlService.js';
 
 export const samlRouter = Router();
@@ -56,8 +57,8 @@ samlRouter.post('/acs', express.urlencoded({ extended: false }), async (req, res
     admin = await prisma.admin.create({ data: { email, passwordHash: null, role: 'VIEWER' } });
   }
 
-  const token = jwt.sign({ sub: admin.id, email: admin.email }, config.jwtSecret, { expiresIn: '12h' });
-  const redirectUrl = new URL('/sso/callback', config.corsOrigin);
+  const token = jwt.sign({ sub: admin.id, email: admin.email, tenantId: admin.tenantId }, config.jwtSecret, { expiresIn: '12h' });
+  const redirectUrl = new URL('/sso/callback', siteConfig().corsOrigin);
   redirectUrl.searchParams.set('token', token);
   redirectUrl.searchParams.set('email', admin.email);
   res.redirect(redirectUrl.toString());

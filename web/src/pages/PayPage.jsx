@@ -130,9 +130,13 @@ export function PayPage() {
         <Stack spacing={1} sx={{ my: 2 }}>
           <Typography>Time connected: {charge.durationMinutes} min</Typography>
           {charge.energyKwh != null && <Typography>Energy: {charge.energyKwh.toFixed(2)} kWh</Typography>}
+          {charge.heldCents > 0 && (
+            <Typography>Your card hold already covered {money(charge.heldCents, charge.currency)}.</Typography>
+          )}
           <Typography variant="h4" fontWeight={600} sx={{ mt: 1 }}>
             {money(charge.amountCents, charge.currency)}
           </Typography>
+          {charge.heldCents > 0 && charge.amountCents > 0 && <Typography color="text.secondary">Still to pay</Typography>}
         </Stack>
 
         {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}

@@ -1,9 +1,11 @@
 import { prisma } from '../db.js';
-import { config } from '../config.js';
+import { siteConfig } from './runtimeConfig.js';
 import { registry } from './stationRegistry.js';
 import { nextReservationId } from './reservationIdCounter.js';
 import { notify } from './notifier.js';
 import { nextWaitingEntry } from './queueService.js';
+import { createHoldForEntry, releaseOpenHoldsFor } from './payments/holds.js';
+import { formatMoney } from './payments/chargeService.js';
 
 // Called whenever a connector's StatusNotification reports "Available".
 // If someone is waiting, holds the connector for them (via OCPP ReserveNow
@@ -29,7 +31,7 @@ export async function onConnectorFreed(stationId, connectorId) {
   if (!entry) return;
 
   const client = registry.getClient(station.identity);
-  const expiresAt = new Date(Date.now() + config.reservationWindowMinutes * 60_000);
+  const expiresAt = new Date(Date.now() + siteConfig().reservationWindowMinutes * 60_000);
 
   let ocppReservationId = null;
 
@@ -76,9 +78,17 @@ export async function onConnectorFreed(stationId, connectorId) {
     }),
   ]);
 
+  // Where the site requires a card hold, the driver is sent the link to place it.
+  const hold = await createHoldForEntry(entry).catch((err) => {
+    console.error(`Creating a card hold for entry ${entry.id} failed:`, err);
+    return null;
+  });
+  const holdNote = hold && hold.status !== 'HELD'
+    ? ` Before you plug in, place a hold of ${formatMoney(hold.amountCents, hold.currency)} on your card here: ${siteConfig().webUrl}/pay/hold/${hold.token}`
+    : '';
   await notify(
     entry.contact,
-    `${station.name} is ready for you. Plug in by ${expiresAt.toLocaleTimeString()} or your spot will be released.`,
+    `${station.name} is ready for you. Plug in by ${expiresAt.toLocaleTimeString()} or your spot will be released.${holdNote}`,
   );
 }
 
@@ -149,7 +159,7 @@ export async function handleStartTransaction(stationId, connectorId, idTag) {
   if (!entry) return;
 
   await prisma.$transaction([
-    prisma.queueEntry.update({ where: { id: entry.id }, data: { status: 'COMPLETED' } }),
+    prisma.queueEntry.update({ where: { id: entry.id }, data: { status: 'COMPLETED', closedAt: new Date() } }),
     ...(entry.reservation
       ? [prisma.reservation.update({ where: { id: entry.reservation.id }, data: { status: 'FULFILLED' } })]
       : []),
@@ -246,7 +256,8 @@ export async function cancelQueueEntry(entryId) {
     await releaseReservation(entry.reservation, entry.station);
   }
 
-  return prisma.queueEntry.update({ where: { id: entryId }, data: { status: 'CANCELLED' } });
+  await releaseOpenHoldsFor(entry.idTag);
+  return prisma.queueEntry.update({ where: { id: entryId }, data: { status: 'CANCELLED', closedAt: new Date() } });
 }
 
 async function releaseReservation(reservation, station) {
@@ -273,8 +284,10 @@ export async function sweepExpiredReservations() {
     await releaseReservation(reservation, reservation.station);
     await prisma.queueEntry.update({
       where: { id: reservation.queueEntryId },
-      data: { status: 'EXPIRED' },
+      data: { status: 'EXPIRED', closedAt: new Date() },
     });
+    // The driver's turn is over, so any card hold they placed for it goes.
+    if (reservation.queueEntry) await releaseOpenHoldsFor(reservation.queueEntry.idTag);
     // The connector is presumably still Available; let the next person in.
     await onConnectorFreed(reservation.stationId, reservation.connectorId);
   }

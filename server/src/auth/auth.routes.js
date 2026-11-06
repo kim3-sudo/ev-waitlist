@@ -8,13 +8,14 @@ import { config } from '../config.js';
 import { getSettings } from '../services/settingsService.js';
 import { resolvePermissions } from '../services/roleService.js';
 import { requireAdmin, requireAdminAllowingPasswordChange } from './auth.middleware.js';
+import { tenantForAdminEmail, tenantFromAdminToken } from '../tenancy/middleware.js';
 
 export const authRouter = Router();
 
 const MFA_TOKEN_TTL = '5m';
 
 function issueSessionToken(admin) {
-  return jwt.sign({ sub: admin.id, email: admin.email }, config.jwtSecret, { expiresIn: '12h' });
+  return jwt.sign({ sub: admin.id, email: admin.email, tenantId: admin.tenantId }, config.jwtSecret, { expiresIn: '12h' });
 }
 
 // Body returned whenever a full session is granted. The client uses
@@ -26,6 +27,7 @@ async function sessionBody(admin) {
     role: admin.role,
     permissions: await resolvePermissions(admin.role),
     mustChangePassword: admin.mustChangePassword,
+    instanceAdmin: admin.instanceAdmin,
   };
 }
 
@@ -65,7 +67,7 @@ async function resolveAdminForMfaStep(req) {
   return null;
 }
 
-authRouter.post('/login', async (req, res) => {
+authRouter.post('/login', tenantForAdminEmail, async (req, res) => {
   const { email, password } = req.body ?? {};
   if (!email || !password) {
     return res.status(400).json({ error: 'email and password are required' });
@@ -88,7 +90,7 @@ authRouter.post('/login', async (req, res) => {
   res.json(await sessionBody(admin));
 });
 
-authRouter.post('/mfa/verify', async (req, res) => {
+authRouter.post('/mfa/verify', tenantFromAdminToken, async (req, res) => {
   const { preAuthToken, code } = req.body ?? {};
   if (!preAuthToken || !code) {
     return res.status(400).json({ error: 'preAuthToken and code are required' });
@@ -110,7 +112,7 @@ authRouter.post('/mfa/verify', async (req, res) => {
   res.json(await sessionBody(admin));
 });
 
-authRouter.post('/mfa/setup/start', async (req, res) => {
+authRouter.post('/mfa/setup/start', tenantFromAdminToken, async (req, res) => {
   const resolved = await resolveAdminForMfaStep(req);
   if (!resolved) return res.status(401).json({ error: 'Not authenticated' });
 
@@ -121,7 +123,7 @@ authRouter.post('/mfa/setup/start', async (req, res) => {
   res.json({ secret, qrCode });
 });
 
-authRouter.post('/mfa/setup/confirm', async (req, res) => {
+authRouter.post('/mfa/setup/confirm', tenantFromAdminToken, async (req, res) => {
   const resolved = await resolveAdminForMfaStep(req);
   if (!resolved) return res.status(401).json({ error: 'Not authenticated' });
 
@@ -194,5 +196,6 @@ authRouter.get('/me', requireAdminAllowingPasswordChange, async (req, res) => {
     mfaEnabled: admin.mfaEnabled,
     hasPassword: Boolean(admin.passwordHash),
     mustChangePassword: admin.mustChangePassword,
+    instanceAdmin: admin.instanceAdmin,
   });
 });

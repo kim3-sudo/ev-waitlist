@@ -1,5 +1,15 @@
 # EV Waitlist
 
+> **Legal notice.** EV Waitlist is open-source software provided as is. It does not provide legal advice. If you run charging sites, the features that touch the law are yours to review with your own counsel before you use them: roaming (OCPI) terms and the warning drivers see, payments, retention of drivers' personal data, and payer records. The defaults are starting points, not legal advice.
+
+## Documentation
+
+- [Install](docs/install.md): requirements, the three database options, and first run.
+- [Upgrading](docs/upgrading.md): moving an existing single-site install to this version.
+- [Operator checklist](docs/operator-checklist.md): what to set up and review before drivers use the site.
+- [Roaming (OCPI)](docs/ocpi.md): what roaming needs, and what is not built yet.
+- [Security](SECURITY.md): how to report a vulnerability.
+
 ## To Run
 
 ```bash

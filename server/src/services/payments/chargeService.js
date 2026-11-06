@@ -1,9 +1,10 @@
 import { prisma } from '../../db.js';
 import { notify } from '../notifier.js';
-import { config } from '../../config.js';
+import { siteConfig } from '../runtimeConfig.js';
 import { getPaymentSettings } from './paymentSettingsService.js';
 import { computeCharge } from './pricing.js';
 import { isProviderConfigured } from './providers.js';
+import { settleHoldForTransaction } from './holds.js';
 import { randomBytes } from 'node:crypto';
 
 export function formatMoney(cents, currency) {
@@ -17,7 +18,8 @@ export async function createChargeForTransaction(stationId, ocppTransactionId) {
     where: { stationId, ocppTransactionId },
     include: { station: { select: { name: true } }, charge: true },
   });
-  if (!tx || !tx.stoppedAt || tx.charge) return null;
+  // Roaming sessions are billed by the partner through a CDR, not by a payment link.
+  if (!tx || !tx.stoppedAt || tx.charge || tx.partnerId) return null;
 
   const settings = await getPaymentSettings();
   const result = computeCharge(settings, {
@@ -33,6 +35,12 @@ export async function createChargeForTransaction(stationId, ocppTransactionId) {
     orderBy: { createdAt: 'desc' },
   });
 
+  // A card hold placed before the session pays for it first: capture the actual cost,
+  // up to the hold. Only the balance is then charged through a payment link.
+  const held = await settleHoldForTransaction(tx.id, result.status === 'PENDING' ? result.amountCents : 0);
+  const balance = Math.max(0, result.amountCents - held.capturedCents);
+  const status = held.capturedCents > 0 && balance === 0 ? 'PAID' : result.status;
+
   const charge = await prisma.charge.create({
     data: {
       token: randomBytes(24).toString('base64url'),
@@ -43,20 +51,23 @@ export async function createChargeForTransaction(stationId, ocppTransactionId) {
       payerContact: entry?.contact ?? null,
       pricingModel: settings.pricingModel,
       currency: settings.currency,
-      amountCents: result.amountCents,
+      amountCents: balance,
+      holdCapturedCents: held.capturedCents,
       durationSeconds: result.durationSeconds,
       energyWh: result.energyWh,
-      status: result.status,
+      status,
+      ...(status === 'PAID' ? { provider: held.provider, providerRef: held.providerRef, paidAt: new Date() } : {}),
     },
   });
 
   if (charge.status === 'PENDING' && settings.provider !== 'NONE' && isProviderConfigured(settings.provider)) {
     if (charge.payerContact) {
-      const link = `${config.webUrl}/pay/${charge.token}`;
-      await notify(
-        charge.payerContact,
-        `Your charging session at ${tx.station.name} cost ${formatMoney(charge.amountCents, charge.currency)}. Pay here: ${link}`,
-      );
+      const link = `${siteConfig().webUrl}/pay/${charge.token}`;
+      const cost = formatMoney(result.amountCents, charge.currency);
+      const text = held.capturedCents > 0
+        ? `Your charging session at ${tx.station.name} cost ${cost}. Your card hold covered ${formatMoney(held.capturedCents, charge.currency)}. Pay the remaining ${formatMoney(balance, charge.currency)} here: ${link}`
+        : `Your charging session at ${tx.station.name} cost ${cost}. Pay here: ${link}`;
+      await notify(charge.payerContact, text);
     }
   }
   return charge;
