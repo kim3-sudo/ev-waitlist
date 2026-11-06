@@ -173,29 +173,68 @@ async function waitForStatus(stationId, since, matches, what) {
   const deadline = Date.now() + TEST_TIMEOUT_MS;
   let last = [];
   while (Date.now() < deadline) {
-    last = (await reportsSince(stationId, since)).filter((c) => c.connectorId > 0);    if (last.length > 0 && last.every((c) => matches(c.status))) {
-      return { ok: true, message: `The charge point reports ${what} on ${last.length} connector${last.length === 1 ? '' : 's'}.` };
+    last = (await reportsSince(stationId, since)).filter((c) => c.connectorId > 0);
+    if (last.length > 0 && last.every((c) => matches(c.status))) {
+      return {
+        ok: true,
+        message: `The charge point reports ${what} on ${last.length} connector${last.length === 1 ? '' : 's'}.`,
+        details: connectorLines(last),
+      };
     }
     await new Promise((resolve) => setTimeout(resolve, TEST_POLL_MS));
   }
   if (last.length === 0) {
-    return { ok: false, message: `The charge point did not report its status within ${TEST_TIMEOUT_MS / 1000} seconds.` };
+    return {
+      ok: false,
+      message: `The charge point did not report its status within ${TEST_TIMEOUT_MS / 1000} seconds.`,
+      details: ['No status reports arrived after this step started.'],
+    };
   }
   const statuses = [...new Set(last.map((c) => c.status))].join(', ');
-  return { ok: false, message: `Expected ${what}, but the charge point reports: ${statuses}.` };
+  return {
+    ok: false,
+    message: `Expected ${what}, but the charge point reports: ${statuses}.`,
+    details: connectorLines(last),
+  };
+}
+
+// One line per connector with the status it last reported, for the test's details.
+function connectorLines(connectors) {
+  return [...connectors]
+    .sort((a, b) => a.connectorId - b.connectorId)
+    .map((c) => `Connector ${c.connectorId}: ${c.status}`);
 }
 
 // Asks the charge point to go out of service (Inoperative) or back into service (Operative).
 async function changeAvailability(client, stationId, type) {
   const result = await withTimeout(client.call('ChangeAvailability', { connectorId: 0, type }));
   const status = result?.status;
+  const details = [`Request: ChangeAvailability, connector 0, type ${type}`, `Response status: ${status ?? 'none'}`];
   if (status === 'Accepted') {
-    return { ok: true, message: `The charge point accepted the request (${type}).` };
+    return { ok: true, message: `The charge point accepted the request (${type}).`, details };
   }
   if (status === 'Scheduled') {
-    return { ok: true, message: `The charge point scheduled the change. It applies once its current task ends.` };
+    return {
+      ok: true,
+      message: `The charge point scheduled the change. It applies once its current task ends.`,
+      details,
+    };
   }
-  return { ok: false, message: `The charge point replied ${status ?? 'with no status'} to ${type}.` };
+  return { ok: false, message: `The charge point replied ${status ?? 'with no status'} to ${type}.`, details };
+}
+
+// The settings the charge point returned, one line each. Values of secrets (such as the
+// authorization key) are hidden, so they are not shown in the browser.
+function configurationLines(result) {
+  const keys = Array.isArray(result?.configurationKey) ? result.configurationKey : [];
+  const lines = keys.map((k) => {
+    const secret = /key|password|secret|token/i.test(k.key ?? '');
+    const value = secret ? '(hidden)' : k.value === undefined ? '(no value)' : String(k.value);
+    return `${k.key}: ${value}${k.readonly ? ' (read-only)' : ''}`;
+  });
+  const unknown = Array.isArray(result?.unknownKey) ? result.unknownKey : [];
+  if (unknown.length > 0) lines.push(`Not recognised: ${unknown.join(', ')}`);
+  return lines;
 }
 
 // One step of the connection test. Body: { identity, since? } where `since` is the ISO
@@ -229,14 +268,22 @@ adminStationsRouter.post('/test-connection/:step', async (req, res) => {
     if (step === 'configuration') {
       const result = await withTimeout(client.call('GetConfiguration', {}));
       const count = Array.isArray(result?.configurationKey) ? result.configurationKey.length : 0;
-      return res.json({ ok: true, message: `The charge point answered with ${count} setting${count === 1 ? '' : 's'}.` });
+      return res.json({
+        ok: true,
+        message: `The charge point answered with ${count} setting${count === 1 ? '' : 's'}.`,
+        details: configurationLines(result),
+      });
     }
 
     if (step === 'deactivate') {
       // Taking a charge point out of service during a session would stop the driver's charging.
       const open = await prisma.transaction.count({ where: { stationId: station.id, stoppedAt: null } });
       if (open > 0) {
-        return res.json({ ok: false, message: 'A charging session is in progress. Stop it, then run the test again.' });
+        return res.json({
+          ok: false,
+          message: 'A charging session is in progress. Stop it, then run the test again.',
+          details: [`Open charging sessions: ${open}`],
+        });
       }
       return res.json(await changeAvailability(client, station.id, 'Inoperative'));
     }

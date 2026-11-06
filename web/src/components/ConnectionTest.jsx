@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Accordion, AccordionDetails, AccordionSummary, Alert, Button, CircularProgress, Stack, Typography } from '@mui/material';
+import { Accordion, AccordionDetails, AccordionSummary, Alert, Box, Button, CircularProgress, Stack, Typography } from '@mui/material';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import CancelIcon from '@mui/icons-material/Cancel';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
@@ -58,7 +58,7 @@ function StepIcon({ state }) {
 // It takes the charge point out of service and back, so the admin is told that first.
 // `identity` is the charge point's OCPP identity. Disabled until there is one.
 export function ConnectionTest({ identity, disabled = false, disabledReason }) {
-  const initial = () => Object.fromEntries(STEPS.map((s) => [s.id, { state: 'pending', message: '' }]));
+  const initial = () => Object.fromEntries(STEPS.map((s) => [s.id, { state: 'pending', message: '', details: [] }]));
   const [results, setResults] = useState(initial);
   const [running, setRunning] = useState(false);
   const [finished, setFinished] = useState(false);
@@ -83,15 +83,17 @@ export function ConnectionTest({ identity, disabled = false, disabledReason }) {
         setStep(step.id, { state: 'running' });
         let ok;
         let message;
+        let details = [];
         try {
           const { data } = await api.post(`/api/admin/stations/test-connection/${step.id}`, { identity, since });
           ok = data.ok;
           message = data.message;
+          details = Array.isArray(data.details) ? data.details : [];
         } catch (err) {
           ok = false;
           message = err.response?.data?.error ?? 'Could not run this check.';
         }
-        setStep(step.id, { state: ok ? 'ok' : 'fail', message });
+        setStep(step.id, { state: ok ? 'ok' : 'fail', message, details });
         // Before the charge point is changed, any failure stops the test. After that, the test
         // still tries to bring the charge point back into service, even if a check failed.
         if (!ok && BEFORE_CHANGE.includes(step.id)) stopped = true;
@@ -149,10 +151,32 @@ export function ConnectionTest({ identity, disabled = false, disabledReason }) {
                       </Stack>
                     </Stack>
                   </AccordionSummary>
-                  <AccordionDetails id={`${step.id}-details`}>
-                    <Typography variant="body2" color="text.secondary" sx={{ pl: 4.5 }}>
-                      {step.details}
-                    </Typography>
+                  <AccordionDetails id={`${step.id}-details`} sx={{ pl: 6 }}>
+                    <Stack spacing={1.5}>
+                      <Typography variant="body2" color="text.secondary">
+                        {step.details}
+                      </Typography>
+                      {r.details.length > 0 && (
+                        <Box
+                          component="pre"
+                          aria-label={`${step.label} results`}
+                          sx={{
+                            m: 0,
+                            p: 1.5,
+                            maxHeight: 240,
+                            overflow: 'auto',
+                            whiteSpace: 'pre-wrap',
+                            wordBreak: 'break-word',
+                            fontFamily: 'monospace',
+                            fontSize: '0.8125rem',
+                            bgcolor: 'action.hover',
+                            borderRadius: 1,
+                          }}
+                        >
+                          {r.details.join('\n')}
+                        </Box>
+                      )}
+                    </Stack>
                   </AccordionDetails>
                 </Accordion>
               </Stack>
