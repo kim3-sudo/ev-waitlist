@@ -34,6 +34,8 @@ import { Link as RouterLink } from 'react-router-dom';
 import { api } from '../api/client.js';
 import { MeterReadingsSettings } from '../components/MeterReadingsSettings.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
+import { usePagedList } from '../api/paged.js';
+import { LoadMore } from '../components/LoadMore.jsx';
 
 const PROVIDERS = [
   { value: 'NONE', label: 'None (record charges only, no card payments)', help: 'Charges are recorded for your records. Drivers get no payment link.' },
@@ -308,8 +310,8 @@ function RateCalculatorDialog({ open, onClose, calc, onCalc, result, marginText,
           <SaveStatus state={saveState} />
           {isDefault && (
             <Alert severity="info">
-              These are conservative starting values: the costs are set on the high side, so the price is not set below the
-              real cost. Replace them with your own figures from your bills.
+              These are low starting values, so the price check flags a high price. Replace them with your own figures from
+              your bills, and set a higher price only when you have confirmed it.
             </Alert>
           )}
           <Typography variant="body2" color="text.secondary">
@@ -416,8 +418,9 @@ export function AdminPaymentsPage() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [saving, setSaving] = useState(false);
-  const [charges, setCharges] = useState([]);
   const [statusFilter, setStatusFilter] = useState('');
+  const chargeList = usePagedList('/api/admin/payments/charges', { params: statusFilter ? { status: statusFilter } : {} });
+  const charges = chargeList.items;
   const [calcOpen, setCalcOpen] = useState(false);
   // The calculator saves itself: calcDirty is set when the admin edits it, and not when the page loads.
   const [calcDirty, setCalcDirty] = useState(false);
@@ -434,10 +437,7 @@ export function AdminPaymentsPage() {
   }
 
   async function loadCharges() {
-    const { data } = await api.get('/api/admin/payments/charges', {
-      params: statusFilter ? { status: statusFilter } : {},
-    });
-    setCharges(data);
+    await chargeList.reload();
   }
 
   useEffect(() => {
@@ -878,6 +878,7 @@ export function AdminPaymentsPage() {
               })}
             </TableBody>
           </Table>
+          <LoadMore hasMore={chargeList.hasMore} loading={chargeList.loading} onLoadMore={chargeList.loadMore} />
         </Paper>
       </Stack>
       <MeterReadingsSettings />

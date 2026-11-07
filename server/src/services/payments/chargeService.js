@@ -4,6 +4,7 @@ import { renderMessage } from '../messageTemplates.js';
 import { siteConfig } from '../runtimeConfig.js';
 import { getPaymentSettings } from './paymentSettingsService.js';
 import { computeCharge } from './pricing.js';
+import { priceAdjusterForSession } from './priceRuleService.js';
 import { checkTransactionEnergy } from './energyCheck.js';
 import { isProviderConfigured } from './providers.js';
 import { settleHoldForTransaction } from './holds.js';
@@ -18,7 +19,7 @@ export function formatMoney(cents, currency) {
 export async function createChargeForTransaction(stationId, ocppTransactionId) {
   const tx = await prisma.transaction.findFirst({
     where: { stationId, ocppTransactionId },
-    include: { station: { select: { name: true } }, charge: true },
+    include: { station: { select: { name: true, zoneId: true } }, charge: true },
   });
   // Roaming sessions are billed by the partner through a CDR, not by a payment link.
   if (!tx || !tx.stoppedAt || tx.charge || tx.partnerId) return null;
@@ -26,12 +27,22 @@ export async function createChargeForTransaction(stationId, ocppTransactionId) {
   const settings = await getPaymentSettings();
   // The charger's own readings, checked against the end-of-session reading (see energyCheck.js).
   const energy = await checkTransactionEnergy(tx, settings);
+  // Surge and complimentary changes in effect while the session ran (see priceRules.js).
+  const adjustmentAt = await priceAdjusterForSession({
+    tenantId: tx.tenantId,
+    stationId,
+    zoneId: tx.station.zoneId,
+    connectorId: tx.connectorId,
+    startedAt: tx.startedAt,
+    stoppedAt: tx.stoppedAt,
+  });
   const result = computeCharge(settings, {
     startedAt: tx.startedAt,
     stoppedAt: tx.stoppedAt,
     meterStart: tx.meterStart,
     meterStop: tx.meterStop,
     energy,
+    adjustmentAt,
   });
 
   // Drivers' contact details come from their waitlist entry for this idTag.
@@ -63,6 +74,7 @@ export async function createChargeForTransaction(stationId, ocppTransactionId) {
       energyWh: result.energyWh,
       energySource: energy.source,
       energyNote: energy.note,
+      pricingNote: result.pricingNote,
       status,
       ...(status === 'PAID' ? { provider: held.provider, providerRef: held.providerRef, paidAt: new Date() } : {}),
     },

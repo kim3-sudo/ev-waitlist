@@ -99,15 +99,15 @@ export function highestPricePerKwhCents(settings, powerKw = DEFAULT_REFERENCE_PO
   return perHour / powerKw;
 }
 
-// Conservative starting values for a new calculator: the costs are on the high side,
-// so the price isn't set below what the energy really costs. The admin replaces them
-// with their own figures.
+// Conservative starting values for a new calculator: the costs are on the low side, so
+// the price check flags a high price by default. The admin replaces them with their own
+// figures from their bills, and must explicitly choose a higher price to avoid the warning.
 export const DEFAULT_CALCULATOR_INPUTS = {
-  energyCostPerKwhCents: 35,
-  distributionPerKwhCents: 10,
+  energyCostPerKwhCents: 12,
+  distributionPerKwhCents: 3,
   solarCostPerKwhCents: 0,
-  customerChargePerMonthCents: 3000,
-  infrastructurePerMonthCents: 10000,
+  customerChargePerMonthCents: 500,
+  infrastructurePerMonthCents: 1000,
   solarKw: 0,
   solarKwhPerKwPerYear: 0,
   monthlyKwh: 1000,

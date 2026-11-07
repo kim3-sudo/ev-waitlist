@@ -263,13 +263,15 @@ export function sessionOf(operator, station, tx, token, settings, lastUpdated = 
 }
 
 // A charge detail record, for a finished roaming session. The cost is worked out
-// from the site's pricing at the time it is built.
-export function cdrOf(operator, station, tx, token, settings) {
+// from the site's pricing at the time it is built, with any price change in effect
+// (adjustmentAt, from priceRuleService.priceAdjusterForSession).
+export function cdrOf(operator, station, tx, token, settings, adjustmentAt) {
   const charge = computeCharge(settings, {
     startedAt: tx.startedAt,
     stoppedAt: tx.stoppedAt,
     meterStart: tx.meterStart,
     meterStop: tx.meterStop,
+    adjustmentAt,
   });
   const minutes = charge.durationSeconds / 60;
   const kwh = charge.energyWh == null ? 0 : charge.energyWh / 1000;

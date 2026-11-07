@@ -130,6 +130,9 @@ adminSitesRouter.delete('/:id', async (req, res) => {
     rawPrisma.ocpiToken.deleteMany({ where: { tenantId: site.id } }),
     rawPrisma.ocpiPartner.deleteMany({ where: { tenantId: site.id } }),
     rawPrisma.zone.deleteMany({ where: { tenantId: site.id } }),
+    // Site-only alerts and price changes go with the site. Network-wide ones have no site and stay.
+    rawPrisma.alert.deleteMany({ where: { tenantId: site.id } }),
+    rawPrisma.priceRule.deleteMany({ where: { tenantId: site.id } }),
     rawPrisma.tenant.delete({ where: { id: site.id } }),
   ]);
   await loadAllSites();

@@ -1,3 +1,4 @@
+import { readPageRequest, afterPosition, pageOf } from '../pagination.js';
 import { Router } from 'express';
 import { prisma } from '../db.js';
 import { enqueueForActivePartners } from '../ocpi/outbox.js';
@@ -69,15 +70,18 @@ adminPaymentsRouter.put('/meter', async (req, res) => {
 
 // Recent charges, newest first. Optional ?status=PENDING|PAID|NEEDS_REVIEW|NO_CHARGE.
 adminPaymentsRouter.get('/charges', async (req, res) => {
-  const where = req.query.status ? { status: String(req.query.status) } : {};
-  const charges = await prisma.charge.findMany({
-    where,
-    orderBy: { createdAt: 'desc' },
-    take: 200,
+  const page = readPageRequest(req.query);
+  if (page.error) return res.status(400).json({ error: page.error });
+  const status = req.query.status ? { status: String(req.query.status) } : {};
+  const rows = await prisma.charge.findMany({
+    where: { AND: [status, afterPosition(page.position, 'createdAt', { date: true })] },
+    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+    take: page.limit + 1,
     include: { station: { select: { name: true } } },
   });
-  res.json(
-    charges.map((c) => ({
+  const result = pageOf(rows, page.limit, (c) => ({ v: c.createdAt.toISOString(), i: c.id }));
+  res.json({ nextCursor: result.nextCursor, data:
+    result.data.map((c) => ({
       id: c.id,
       stationName: c.station.name,
       idTag: c.idTag,
@@ -93,11 +97,13 @@ adminPaymentsRouter.get('/charges', async (req, res) => {
       // Where the energy came from (METER_VALUES, STOP_TRANSACTION or NONE), and why a session needs review.
       energySource: c.energySource,
       energyNote: c.energyNote,
+      // Set when a surge or complimentary change altered the amount (see services/payments/priceRules.js).
+      pricingNote: c.pricingNote,
       status: c.status,
       provider: c.provider,
       providerRef: c.providerRef,
       createdAt: c.createdAt,
       paidAt: c.paidAt,
     })),
-  );
+  });
 });

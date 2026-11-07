@@ -6,10 +6,12 @@ import { tryDispatchStation } from '../services/dispatcher.js';
 import { getSettings, resolvePlateRegion, validateIdentifiers } from '../services/settingsService.js';
 import { contactProblem, smsChoice } from '../services/notifier.js';
 import { roamingWarningError } from '../services/roaming.js';
+import { stationNotices } from '../services/notices.js';
+import { lockedOut, LOCKOUT_MESSAGE } from '../services/payments/providerOutage.js';
 
 export const stationsRouter = Router();
 
-function serializeStation(station) {
+function serializeStation(station, notices = { alerts: [], pricing: [] }) {
   return {
     id: station.id,
     name: station.name,
@@ -22,6 +24,8 @@ function serializeStation(station) {
       .sort((a, b) => a.connectorId - b.connectorId)
       .map((c) => ({ connectorId: c.connectorId, status: c.status })),
     waitingCount: station.queueEntries.filter((e) => e.status === 'WAITING').length,
+    // Alerts and price changes in effect for this charge point now.
+    notices,
   };
 }
 
@@ -34,7 +38,8 @@ stationsRouter.get('/', async (req, res) => {
     include: { connectors: true, queueEntries: true },
     orderBy: { name: 'asc' },
   });
-  res.json(stations.map(serializeStation));
+  const notices = await stationNotices(stations);
+  res.json(stations.map((station) => serializeStation(station, notices.get(station.id))));
 });
 
 stationsRouter.get('/:id', async (req, res) => {
@@ -43,7 +48,8 @@ stationsRouter.get('/:id', async (req, res) => {
     include: { connectors: true, queueEntries: true },
   });
   if (!station) return res.status(404).json({ error: 'Station not found' });
-  res.json(serializeStation(station));
+  const notices = await stationNotices([station]);
+  res.json(serializeStation(station, notices.get(station.id)));
 });
 
 stationsRouter.post('/:id/waitlist', async (req, res) => {
@@ -72,6 +78,8 @@ stationsRouter.post('/:id/waitlist', async (req, res) => {
 
   const roamingError = await roamingWarningError(req.body);
   if (roamingError) return res.status(roamingError.status).json(roamingError.body);
+
+  if (await lockedOut()) return res.status(503).json({ error: LOCKOUT_MESSAGE });
 
   const entry = await joinQueue(
     { stationId: station.id },

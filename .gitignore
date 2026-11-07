@@ -150,3 +150,6 @@ data/
 # Databases written next to the schema by mistake (SQLite paths are relative to server/prisma)
 server/prisma/*.db
 server/prisma/*.db-journal
+
+# Generated API reference (npm run docs:api:build)
+server/public/api-docs/

@@ -2,23 +2,38 @@ import { Router } from 'express';
 import { saveRuntimeSettings, runtimeSettingsView } from '../services/runtimeConfig.js';
 import { providerStatus, getStripe, getBraintreeGateway, getSquare } from '../services/payments/providers.js';
 import { siteConfig } from '../services/runtimeConfig.js';
+import { prisma } from '../db.js';
+import { currentTenantId } from '../tenancy/context.js';
+import { getPaymentSettings } from '../services/payments/paymentSettingsService.js';
+import { OUTAGE_MODES, outageStatus } from '../services/payments/providerOutage.js';
 
 // Mounted behind integrations.manage. Payment provider keys only.
 export const adminIntegrationsRouter = Router();
 const GROUPS = ['stripe', 'braintree', 'square'];
 
-function view() {
-  return { ...runtimeSettingsView(GROUPS), providers: providerStatus() };
+async function view() {
+  return { ...runtimeSettingsView(GROUPS), providers: providerStatus(), providerOutage: await outageStatus() };
 }
 
-adminIntegrationsRouter.get('/', (req, res) => {
-  res.json(view());
+adminIntegrationsRouter.get('/', async (req, res) => {
+  res.json(await view());
 });
 
 adminIntegrationsRouter.put('/', async (req, res) => {
   const result = await saveRuntimeSettings(req.body ?? {}, GROUPS);
   if (result.error) return res.status(400).json({ error: result.error });
-  res.json(view());
+  res.json(await view());
+});
+
+// What happens while the payment provider is unavailable: COMPLIMENTARY or LOCKOUT.
+adminIntegrationsRouter.put('/outage-mode', async (req, res) => {
+  const mode = req.body?.mode;
+  if (!OUTAGE_MODES.includes(mode)) {
+    return res.status(400).json({ error: 'Choose "complimentary" or "lockout"' });
+  }
+  await getPaymentSettings();
+  await prisma.paymentSettings.update({ where: { tenantId: currentTenantId() }, data: { providerOutageMode: mode } });
+  res.json(await view());
 });
 
 // Makes one harmless read-only call to the provider to check the saved keys.

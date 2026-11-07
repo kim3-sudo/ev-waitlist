@@ -286,6 +286,41 @@ CREATE TABLE `CustomRole` (
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 -- CreateTable
+CREATE TABLE `ServiceAccount` (
+    `id` VARCHAR(191) NOT NULL,
+    `tenantId` VARCHAR(191) NOT NULL,
+    `name` VARCHAR(191) NOT NULL,
+    `description` VARCHAR(191) NULL,
+    `permissions` TEXT NOT NULL DEFAULT '[]',
+    `disabled` BOOLEAN NOT NULL DEFAULT false,
+    `createdBy` VARCHAR(191) NULL,
+    `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    `updatedAt` DATETIME(3) NOT NULL,
+
+    UNIQUE INDEX `ServiceAccount_tenantId_name_key`(`tenantId`, `name`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- CreateTable
+CREATE TABLE `ApiKey` (
+    `id` VARCHAR(191) NOT NULL,
+    `tenantId` VARCHAR(191) NOT NULL,
+    `serviceAccountId` VARCHAR(191) NOT NULL,
+    `name` VARCHAR(191) NOT NULL,
+    `prefix` VARCHAR(191) NOT NULL,
+    `keyHash` VARCHAR(191) NOT NULL,
+    `expiresAt` DATETIME(3) NULL,
+    `revokedAt` DATETIME(3) NULL,
+    `lastUsedAt` DATETIME(3) NULL,
+    `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+
+    UNIQUE INDEX `ApiKey_keyHash_key`(`keyHash`),
+    INDEX `ApiKey_tenantId_idx`(`tenantId`),
+    INDEX `ApiKey_serviceAccountId_idx`(`serviceAccountId`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- CreateTable
 CREATE TABLE `PaymentSettings` (
     `tenantId` VARCHAR(191) NOT NULL,
     `pricingModel` VARCHAR(191) NOT NULL DEFAULT 'TIME',
@@ -306,6 +341,7 @@ CREATE TABLE `PaymentSettings` (
     `meterMinSessionMinutes` INTEGER NOT NULL DEFAULT 2,
     `meterMaxJumpWh` INTEGER NOT NULL DEFAULT 50000,
     `rateCalculatorInputs` TEXT NULL,
+    `providerOutageMode` VARCHAR(191) NOT NULL DEFAULT 'LOCKOUT',
     `preauthCents` INTEGER NULL,
     `updatedAt` DATETIME(3) NOT NULL,
 
@@ -330,6 +366,7 @@ CREATE TABLE `Charge` (
     `energyWh` INTEGER NULL,
     `energySource` VARCHAR(191) NULL,
     `energyNote` VARCHAR(191) NULL,
+    `pricingNote` VARCHAR(191) NULL,
     `status` VARCHAR(191) NOT NULL DEFAULT 'PENDING',
     `provider` VARCHAR(191) NULL,
     `providerRef` VARCHAR(191) NULL,
@@ -364,6 +401,62 @@ CREATE TABLE `PaymentHold` (
     UNIQUE INDEX `PaymentHold_token_key`(`token`),
     INDEX `PaymentHold_tenantId_idx`(`tenantId`),
     INDEX `PaymentHold_tenantId_idTag_idx`(`tenantId`, `idTag`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- CreateTable
+CREATE TABLE `Alert` (
+    `id` VARCHAR(191) NOT NULL,
+    `tenantId` VARCHAR(191) NULL,
+    `scope` VARCHAR(191) NOT NULL,
+    `stationId` VARCHAR(191) NULL,
+    `location` VARCHAR(191) NULL,
+    `severity` VARCHAR(191) NOT NULL DEFAULT 'INFO',
+    `message` TEXT NOT NULL,
+    `startsAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    `endsAt` DATETIME(3) NULL,
+    `createdByAdminId` VARCHAR(191) NULL,
+    `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    `updatedAt` DATETIME(3) NOT NULL,
+
+    INDEX `Alert_tenantId_idx`(`tenantId`),
+    INDEX `Alert_stationId_idx`(`stationId`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- CreateTable
+CREATE TABLE `ProviderOutage` (
+    `id` VARCHAR(191) NOT NULL,
+    `tenantId` VARCHAR(191) NOT NULL,
+    `provider` VARCHAR(191) NOT NULL,
+    `reason` VARCHAR(191) NOT NULL,
+    `startedAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    `endedAt` DATETIME(3) NULL,
+
+    INDEX `ProviderOutage_tenantId_endedAt_idx`(`tenantId`, `endedAt`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- CreateTable
+CREATE TABLE `PriceRule` (
+    `id` VARCHAR(191) NOT NULL,
+    `tenantId` VARCHAR(191) NULL,
+    `kind` VARCHAR(191) NOT NULL,
+    `scope` VARCHAR(191) NOT NULL,
+    `zoneId` VARCHAR(191) NULL,
+    `stationId` VARCHAR(191) NULL,
+    `powerClass` VARCHAR(191) NULL,
+    `percent` INTEGER NULL,
+    `label` VARCHAR(191) NOT NULL DEFAULT '',
+    `startsAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    `endsAt` DATETIME(3) NULL,
+    `createdByAdminId` VARCHAR(191) NULL,
+    `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    `updatedAt` DATETIME(3) NOT NULL,
+
+    INDEX `PriceRule_tenantId_idx`(`tenantId`),
+    INDEX `PriceRule_stationId_idx`(`stationId`),
+    INDEX `PriceRule_zoneId_idx`(`zoneId`),
     PRIMARY KEY (`id`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
@@ -528,6 +621,15 @@ ALTER TABLE `StationEvent` ADD CONSTRAINT `StationEvent_stationId_fkey` FOREIGN 
 ALTER TABLE `CustomRole` ADD CONSTRAINT `CustomRole_tenantId_fkey` FOREIGN KEY (`tenantId`) REFERENCES `Tenant`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
+ALTER TABLE `ServiceAccount` ADD CONSTRAINT `ServiceAccount_tenantId_fkey` FOREIGN KEY (`tenantId`) REFERENCES `Tenant`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `ApiKey` ADD CONSTRAINT `ApiKey_tenantId_fkey` FOREIGN KEY (`tenantId`) REFERENCES `Tenant`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `ApiKey` ADD CONSTRAINT `ApiKey_serviceAccountId_fkey` FOREIGN KEY (`serviceAccountId`) REFERENCES `ServiceAccount`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
 ALTER TABLE `PaymentSettings` ADD CONSTRAINT `PaymentSettings_tenantId_fkey` FOREIGN KEY (`tenantId`) REFERENCES `Tenant`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
@@ -541,6 +643,24 @@ ALTER TABLE `Charge` ADD CONSTRAINT `Charge_transactionId_fkey` FOREIGN KEY (`tr
 
 -- AddForeignKey
 ALTER TABLE `PaymentHold` ADD CONSTRAINT `PaymentHold_tenantId_fkey` FOREIGN KEY (`tenantId`) REFERENCES `Tenant`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `Alert` ADD CONSTRAINT `Alert_tenantId_fkey` FOREIGN KEY (`tenantId`) REFERENCES `Tenant`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `Alert` ADD CONSTRAINT `Alert_stationId_fkey` FOREIGN KEY (`stationId`) REFERENCES `Station`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `ProviderOutage` ADD CONSTRAINT `ProviderOutage_tenantId_fkey` FOREIGN KEY (`tenantId`) REFERENCES `Tenant`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `PriceRule` ADD CONSTRAINT `PriceRule_tenantId_fkey` FOREIGN KEY (`tenantId`) REFERENCES `Tenant`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `PriceRule` ADD CONSTRAINT `PriceRule_zoneId_fkey` FOREIGN KEY (`zoneId`) REFERENCES `Zone`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `PriceRule` ADD CONSTRAINT `PriceRule_stationId_fkey` FOREIGN KEY (`stationId`) REFERENCES `Station`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE `ConfigValue` ADD CONSTRAINT `ConfigValue_tenantId_fkey` FOREIGN KEY (`tenantId`) REFERENCES `Tenant`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
@@ -563,3 +683,48 @@ ALTER TABLE `OcpiOutbox` ADD CONSTRAINT `OcpiOutbox_partnerId_fkey` FOREIGN KEY 
 -- AddForeignKey
 ALTER TABLE `MessageTemplate` ADD CONSTRAINT `MessageTemplate_tenantId_fkey` FOREIGN KEY (`tenantId`) REFERENCES `Tenant`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
 
+
+-- CreateTable
+CREATE TABLE `AuditEvent` (
+    `id` VARCHAR(191) NOT NULL,
+    `seq` INTEGER NOT NULL,
+    `at` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    `tenantId` VARCHAR(191) NULL,
+    `actorType` VARCHAR(191) NOT NULL,
+    `actorId` VARCHAR(191) NULL,
+    `actorLabel` VARCHAR(191) NULL,
+    `action` VARCHAR(191) NOT NULL,
+    `targetType` VARCHAR(191) NULL,
+    `targetId` VARCHAR(191) NULL,
+    `targetLabel` VARCHAR(191) NULL,
+    `outcome` VARCHAR(191) NOT NULL,
+    `reason` VARCHAR(191) NULL,
+    `changes` TEXT NULL,
+    `ip` VARCHAR(191) NULL,
+    `userAgent` VARCHAR(191) NULL,
+    `requestId` VARCHAR(191) NULL,
+    `prevHash` VARCHAR(191) NOT NULL,
+    `hash` VARCHAR(191) NOT NULL,
+    `exportedAt` DATETIME(3) NULL,
+
+    UNIQUE INDEX `AuditEvent_seq_key`(`seq`),
+    UNIQUE INDEX `AuditEvent_hash_key`(`hash`),
+    INDEX `AuditEvent_tenantId_seq_idx`(`tenantId`, `seq`),
+    INDEX `AuditEvent_action_idx`(`action`),
+    INDEX `AuditEvent_at_idx`(`at`),
+    INDEX `AuditEvent_exportedAt_idx`(`exportedAt`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- CreateTable
+CREATE TABLE `AuditSettings` (
+    `id` VARCHAR(191) NOT NULL DEFAULT 'singleton',
+    `retentionDays` INTEGER NOT NULL DEFAULT 30,
+    `ipLogging` VARCHAR(191) NOT NULL DEFAULT 'TRUNCATED',
+    `updatedAt` DATETIME(3) NOT NULL,
+
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- AddForeignKey
+ALTER TABLE `AuditEvent` ADD CONSTRAINT `AuditEvent_tenantId_fkey` FOREIGN KEY (`tenantId`) REFERENCES `Tenant`(`id`) ON DELETE SET NULL ON UPDATE CASCADE;

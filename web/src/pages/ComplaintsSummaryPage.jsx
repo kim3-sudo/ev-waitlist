@@ -4,6 +4,8 @@ import { api } from '../api/client.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import { ComplaintsSummaryTable } from '../components/ComplaintsSummaryTable.jsx';
 import { LineCuttingComplaintsTable } from '../components/LineCuttingComplaintsTable.jsx';
+import { usePagedList } from '../api/paged.js';
+import { LoadMore } from '../components/LoadMore.jsx';
 
 const POLL_MS = 8000;
 const WINDOWS = [
@@ -18,16 +20,14 @@ export function ComplaintsSummaryPage() {
   const { can } = useAuth();
   const canView = can('complaints.view');
   const [summary, setSummary] = useState(null);
-  const [complaints, setComplaints] = useState([]);
+  const complaintList = usePagedList('/api/admin/complaints', { enabled: canView });
+  const complaints = complaintList.items;
   const [days, setDays] = useState(30);
 
   async function refresh() {
     const { data } = await api.get('/api/admin/reports/complaints-summary', { params: { days } });
     setSummary(data);
-    if (canView) {
-      const list = await api.get('/api/admin/complaints');
-      setComplaints(list.data);
-    }
+    if (canView) await complaintList.reload();
   }
 
   useEffect(() => {
@@ -77,6 +77,7 @@ export function ComplaintsSummaryPage() {
             onUpdateStatus={handleUpdateStatus}
             readOnly={!can('complaints.manage')}
           />
+          <LoadMore hasMore={complaintList.hasMore} loading={complaintList.loading} onLoadMore={complaintList.loadMore} />
         </Paper>
       ) : (
         <Alert severity="info">Your role can't view individual complaints. Ask an admin for access.</Alert>

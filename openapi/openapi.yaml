@@ -1,0 +1,1814 @@
+openapi: 3.1.0
+info:
+  title: Plugyard REST API
+  version: 1.0.0
+  summary: Manage charge points, zones, waitlists, charges, pricing, and driver alerts for one site.
+  description: |
+    The REST API lets your own systems read and manage one site of your charging
+    network: charge points and their status, zones, the waitlist, charges, surge
+    pricing and complimentary charging, driver alerts, complaints, and reports.
+
+    ## Getting access
+
+    Access belongs to a **service account**, not to a person. An administrator
+    creates a service account in the admin app under **API access**, chooses the
+    permissions it should have, and creates an API key for it. The full key is
+    shown once, when it is created. Store it somewhere safe; if it is lost, create
+    a new key and revoke the old one.
+
+    Send the key with every request:
+
+    ```
+    Authorization: Bearer pgk_...
+    ```
+
+    Each key works for the site its service account belongs to. Requests cannot
+    reach another site.
+
+    ## Permissions
+
+    Every operation lists the permission it needs in `x-required-permission`.
+    A request without the permission gets `403 Forbidden`, and the response names
+    the missing permissions in `missing`. Read operations need a `read` permission;
+    changes need `write`, `manage`, or `control`.
+
+    ## Responses and errors
+
+    Bodies are JSON. Timestamps are ISO 8601 in UTC. Every error has an `error`
+    message, and most have a `code`:
+
+    | Status | Meaning |
+    | ------ | ------- |
+    | 400 | The request is not valid. `error` says what to fix. |
+    | 401 | The key is missing, malformed, revoked, expired, or belongs to a disabled service account. |
+    | 403 | The key does not have the permission this operation needs (see `missing`). |
+    | 404 | The item does not exist on this site. |
+    | 405 | The resource is read-only through the API. |
+    | 409 | The request conflicts with the current state. For commands that end a session, retry with `confirmEndSession: true` once the driver has been told. |
+    | 502 | The charge point did not answer the command. |
+
+    List endpoints return a page: `{ "data": [...], "nextCursor": "..." }`. Ask for
+    more with `limit` (1 to 200, default 50) and `cursor`, using the `nextCursor` from
+    the previous page. `nextCursor` is null on the last page. Pages stay stable when
+    items are added or removed between requests.
+
+    ## Personal data
+
+    The API does not return driver names, contact details, licence plates, or
+    payment links. Waitlist entries show position and status only, and charges
+    omit payer details.
+
+    ## Changing the spec
+
+    This document is the source of truth for the API. The reference page is built
+    from it by `npm run docs:api:build`.
+  contact:
+    name: Plugyard support
+  license:
+    name: Proprietary
+    identifier: LicenseRef-Proprietary
+
+servers:
+  - url: /api/v1
+    description: This server (same origin as the admin app)
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: Account
+    description: Who the key belongs to and what it can do.
+  - name: Charge points
+    description: Charge points (stations), their status, and connectors.
+  - name: Commands
+    description: Commands sent to a charge point. A charge point that is offline cannot receive them.
+  - name: Zones
+    description: Groups of charge points that share one waitlist.
+  - name: Waitlist
+    description: Drivers waiting for a charge point or zone.
+  - name: Charges
+    description: Completed and pending charges for sessions.
+  - name: Price rules
+    description: Surge pricing and complimentary charging.
+  - name: Alerts
+    description: Messages shown to drivers.
+  - name: Complaints
+    description: Line-cutting complaints from drivers.
+  - name: Reports
+    description: Aggregates for dashboards.
+
+paths:
+  /me:
+    get:
+      tags: [Account]
+      operationId: getMe
+      summary: Get the calling service account
+      description: Returns the service account and the permissions its key holds. Use it to check a key works.
+      x-required-permission: none
+      responses:
+        '200':
+          description: The service account and its site.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Me'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /stations:
+    get:
+      tags: [Charge points]
+      operationId: listStations
+      summary: List charge points
+      x-required-permission: api.stations.read
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: All charge points on the site, by name.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, nextCursor]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Station'
+                  nextCursor:
+                    type: [string, 'null']
+                    description: Pass as cursor to get the next page. Null on the last page.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags: [Charge points]
+      operationId: createStation
+      summary: Add a charge point
+      x-required-permission: api.stations.write
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StationInput'
+      responses:
+        '201':
+          description: The charge point was added.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Station'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /stations/{id}:
+    parameters:
+      - $ref: '#/components/parameters/StationId'
+    get:
+      tags: [Charge points]
+      operationId: getStation
+      summary: Get a charge point
+      x-required-permission: api.stations.read
+      responses:
+        '200':
+          description: The charge point.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Station'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      tags: [Charge points]
+      operationId: updateStation
+      summary: Change a charge point
+      description: Sends the whole charge point. Fields left out keep their current value. Changing `connectorCount` adds or removes connectors.
+      x-required-permission: api.stations.write
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StationInput'
+      responses:
+        '200':
+          description: The updated charge point.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Station'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [Charge points]
+      operationId: deleteStation
+      summary: Remove a charge point
+      x-required-permission: api.stations.write
+      responses:
+        '204':
+          description: The charge point was removed.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /stations/{id}/status:
+    parameters:
+      - $ref: '#/components/parameters/StationId'
+    get:
+      tags: [Charge points]
+      operationId: getStationStatus
+      summary: Get live status and recent history
+      description: Connector states, the current session on each connector, and the most recent events. Add `refresh=1` to ask an online charge point for its current status first.
+      x-required-permission: api.stations.read
+      parameters:
+        - name: refresh
+          in: query
+          required: false
+          description: Use `1` to ask the charge point for fresh status before answering.
+          schema:
+            type: string
+            enum: ['1']
+      responses:
+        '200':
+          description: The status and history.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /stations/{id}/waitlist:
+    parameters:
+      - $ref: '#/components/parameters/StationId'
+    get:
+      tags: [Waitlist]
+      operationId: listStationWaitlist
+      summary: List the waitlist for a charge point
+      description: Drivers waiting for this charge point, in order. Names and contact details are never returned.
+      x-required-permission: api.waitlist.read
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: Waiting and notified drivers, in order.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, nextCursor]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/WaitlistEntry'
+                  nextCursor:
+                    type: [string, 'null']
+                    description: Pass as cursor to get the next page. Null on the last page.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /stations/{stationId}/transactions/{transactionId}/stop:
+    parameters:
+      - $ref: '#/components/parameters/StationIdCmd'
+      - name: transactionId
+        in: path
+        required: true
+        description: The open session to stop.
+        schema:
+          type: string
+    post:
+      tags: [Commands]
+      operationId: stopTransaction
+      summary: Stop a charging session
+      description: Asks the charge point to stop the session. A `200` means the stop was requested; the session ends when the charge point confirms it.
+      x-required-permission: api.stations.control
+      responses:
+        '200':
+          $ref: '#/components/responses/CommandAccepted'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '502':
+          $ref: '#/components/responses/CommandFailed'
+
+  /stations/{stationId}/trigger:
+    parameters:
+      - $ref: '#/components/parameters/StationIdCmd'
+    post:
+      tags: [Commands]
+      operationId: triggerMessage
+      summary: Ask a charge point to send a message
+      x-required-permission: api.stations.control
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [requestedMessage]
+              properties:
+                requestedMessage:
+                  type: string
+                  enum:
+                    - BootNotification
+                    - Heartbeat
+                    - StatusNotification
+                    - MeterValues
+                    - DiagnosticsStatusNotification
+                    - FirmwareStatusNotification
+                connectorId:
+                  type: integer
+                  minimum: 1
+                  description: Needed for StatusNotification and MeterValues.
+      responses:
+        '200':
+          $ref: '#/components/responses/CommandAccepted'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '502':
+          $ref: '#/components/responses/CommandFailed'
+
+  /stations/{stationId}/connectors/{connectorId}/unlock:
+    parameters:
+      - $ref: '#/components/parameters/StationIdCmd'
+      - $ref: '#/components/parameters/ConnectorId'
+    post:
+      tags: [Commands]
+      operationId: unlockConnector
+      summary: Unlock a connector
+      description: If a session is in progress on the connector, unlocking ends it. The request is refused with `needsConfirmation` until `confirmEndSession` is `true`.
+      x-required-permission: api.stations.control
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConfirmEndSession'
+      responses:
+        '200':
+          $ref: '#/components/responses/CommandAccepted'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/NeedsConfirmation'
+        '502':
+          $ref: '#/components/responses/CommandFailed'
+
+  /stations/{stationId}/reset:
+    parameters:
+      - $ref: '#/components/parameters/StationIdCmd'
+    post:
+      tags: [Commands]
+      operationId: resetStation
+      summary: Restart a charge point
+      description: A soft reset restarts the charge point's software. A hard reset power-cycles it. Any sessions in progress end, so the request is refused with `needsConfirmation` until `confirmEndSession` is `true`.
+      x-required-permission: api.stations.control
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                type:
+                  type: string
+                  enum: [Soft, Hard]
+                  default: Soft
+                confirmEndSession:
+                  type: boolean
+                  default: false
+      responses:
+        '200':
+          $ref: '#/components/responses/CommandAccepted'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/NeedsConfirmation'
+        '502':
+          $ref: '#/components/responses/CommandFailed'
+
+  /stations/{stationId}/connectors/{connectorId}/availability:
+    parameters:
+      - $ref: '#/components/parameters/StationIdCmd'
+      - $ref: '#/components/parameters/ConnectorId'
+    post:
+      tags: [Commands]
+      operationId: setConnectorAvailability
+      summary: Make a connector available or unavailable
+      x-required-permission: api.stations.control
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [operative]
+              properties:
+                operative:
+                  type: boolean
+                  description: "`true` makes the connector available; `false` takes it out of service."
+      responses:
+        '200':
+          $ref: '#/components/responses/CommandAccepted'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '502':
+          $ref: '#/components/responses/CommandFailed'
+
+  /stations/{stationId}/configuration:
+    parameters:
+      - $ref: '#/components/parameters/StationIdCmd'
+    get:
+      tags: [Commands]
+      operationId: getConfiguration
+      summary: Read the charge point's configuration
+      description: The configuration as last read from the charge point. Add `refresh=1` to read it again from an online charge point first.
+      x-required-permission: api.stations.control
+      parameters:
+        - name: refresh
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: ['1']
+      responses:
+        '200':
+          description: Configuration keys and their values.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /stations/{stationId}/configuration/{key}:
+    parameters:
+      - $ref: '#/components/parameters/StationIdCmd'
+      - name: key
+        in: path
+        required: true
+        description: One of the configuration keys the API allows to be changed (for example `HeartbeatInterval`).
+        schema:
+          type: string
+          enum:
+            - HeartbeatInterval
+            - MeterValueSampleInterval
+            - MeterValuesSampledData
+            - StopTxnSampledData
+            - ClockAlignedDataInterval
+            - ConnectionTimeOut
+            - AuthorizeRemoteTxRequests
+            - LocalPreAuthorize
+            - AuthorizationCacheEnabled
+            - StopTransactionOnEVSideDisconnect
+            - UnlockConnectorOnEVSideDisconnect
+    put:
+      tags: [Commands]
+      operationId: setConfiguration
+      summary: Change one configuration key
+      x-required-permission: api.stations.control
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [value]
+              properties:
+                value:
+                  type: string
+                  maxLength: 500
+      responses:
+        '200':
+          description: The value was saved and the charge point answered.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '502':
+          $ref: '#/components/responses/CommandFailed'
+
+  /stations/{stationId}/clear-cache:
+    parameters:
+      - $ref: '#/components/parameters/StationIdCmd'
+    post:
+      tags: [Commands]
+      operationId: clearAuthorizationCache
+      summary: Clear the charge point's authorization cache
+      description: Makes the charge point check every driver again, for example after a driver's data is erased.
+      x-required-permission: api.stations.control
+      responses:
+        '200':
+          $ref: '#/components/responses/CommandAccepted'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '502':
+          $ref: '#/components/responses/CommandFailed'
+
+  /stations/{stationId}/connectors/{connectorId}/hold:
+    parameters:
+      - $ref: '#/components/parameters/StationIdCmd'
+      - $ref: '#/components/parameters/ConnectorId'
+    post:
+      tags: [Commands]
+      operationId: holdConnector
+      summary: Hold a connector for a driver
+      description: Reserves the connector for a driver's ID tag for a number of minutes.
+      x-required-permission: api.stations.control
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [idTag, minutes]
+              properties:
+                idTag:
+                  type: string
+                  maxLength: 20
+                minutes:
+                  type: integer
+                  minimum: 1
+                  maximum: 480
+                note:
+                  type: string
+                  maxLength: 200
+      responses:
+        '201':
+          description: The hold was placed.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /stations/{stationId}/holds/{reservationId}:
+    parameters:
+      - $ref: '#/components/parameters/StationIdCmd'
+      - name: reservationId
+        in: path
+        required: true
+        description: The hold to release.
+        schema:
+          type: string
+    delete:
+      tags: [Commands]
+      operationId: releaseHold
+      summary: Release a hold
+      x-required-permission: api.stations.control
+      responses:
+        '204':
+          description: The hold was released.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /zones:
+    get:
+      tags: [Zones]
+      operationId: listZones
+      summary: List zones
+      x-required-permission: api.zones.read
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: All zones, by name.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, nextCursor]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Zone'
+                  nextCursor:
+                    type: [string, 'null']
+                    description: Pass as cursor to get the next page. Null on the last page.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags: [Zones]
+      operationId: createZone
+      summary: Create a zone
+      x-required-permission: api.zones.write
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ZoneInput'
+      responses:
+        '201':
+          description: The zone was created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Zone'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /zones/{id}:
+    parameters:
+      - $ref: '#/components/parameters/ZoneId'
+    put:
+      tags: [Zones]
+      operationId: updateZone
+      summary: Rename a zone
+      x-required-permission: api.zones.write
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ZoneInput'
+      responses:
+        '200':
+          description: The zone was renamed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Zone'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+    delete:
+      tags: [Zones]
+      operationId: deleteZone
+      summary: Delete a zone
+      description: A zone must have no charge points and nobody waiting.
+      x-required-permission: api.zones.write
+      responses:
+        '204':
+          description: The zone was deleted.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /waitlist/{id}:
+    parameters:
+      - $ref: '#/components/parameters/WaitlistId'
+    get:
+      tags: [Waitlist]
+      operationId: getWaitlistEntry
+      summary: Get a waitlist entry
+      x-required-permission: api.waitlist.read
+      responses:
+        '200':
+          description: The entry and its position in line.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WaitlistEntry'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [Waitlist]
+      operationId: cancelWaitlistEntry
+      summary: Cancel a waitlist entry
+      description: Removes the driver from the line and releases any reservation they held.
+      x-required-permission: api.waitlist.manage
+      responses:
+        '204':
+          description: The entry was cancelled.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /charges:
+    get:
+      tags: [Charges]
+      operationId: listCharges
+      summary: List charges
+      x-required-permission: api.charges.read
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+        - name: status
+          in: query
+          required: false
+          description: Only charges with this status.
+          schema:
+            type: string
+            enum: [PENDING, PAID, NEEDS_REVIEW, NO_CHARGE]
+      responses:
+        '200':
+          description: Charges, newest first.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, nextCursor]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Charge'
+                  nextCursor:
+                    type: [string, 'null']
+                    description: Pass as cursor to get the next page. Null on the last page.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /charges/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      tags: [Charges]
+      operationId: getCharge
+      summary: Get a charge
+      x-required-permission: api.charges.read
+      responses:
+        '200':
+          description: The charge.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Charge'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /price-rules:
+    get:
+      tags: [Price rules]
+      operationId: listPriceRules
+      summary: List surge pricing and complimentary charging rules
+      x-required-permission: api.priceRules.read
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: Rules that apply to this site, including network-wide rules.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, nextCursor]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/PriceRule'
+                  nextCursor:
+                    type: [string, 'null']
+                    description: Pass as cursor to get the next page. Null on the last page.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags: [Price rules]
+      operationId: createPriceRule
+      summary: Create a pricing rule
+      description: "Network-wide rules (`scope: NETWORK`) can only be created by the installation administrator, so the API cannot create them."
+      x-required-permission: api.priceRules.write
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PriceRuleInput'
+      responses:
+        '201':
+          description: The rule was created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PriceRule'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /price-rules/targets:
+    get:
+      tags: [Price rules]
+      operationId: listPriceRuleTargets
+      summary: List zones and charge points a rule can apply to
+      x-required-permission: api.priceRules.read
+      responses:
+        '200':
+          description: Zones, charge points, locations, and power classes available for `zoneId`, `stationId`, and `powerClass`.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /price-rules/{id}:
+    parameters:
+      - $ref: '#/components/parameters/PriceRuleId'
+    put:
+      tags: [Price rules]
+      operationId: updatePriceRule
+      summary: Change a pricing rule
+      description: Send only the fields to change.
+      x-required-permission: api.priceRules.write
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PriceRuleInput'
+      responses:
+        '200':
+          description: The updated rule.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PriceRule'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [Price rules]
+      operationId: deletePriceRule
+      summary: Delete a pricing rule
+      x-required-permission: api.priceRules.write
+      responses:
+        '204':
+          description: The rule was deleted.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /alerts:
+    get:
+      tags: [Alerts]
+      operationId: listAlerts
+      summary: List driver alerts
+      x-required-permission: api.alerts.read
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: Alerts for this site, including network-wide alerts.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, nextCursor]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Alert'
+                  nextCursor:
+                    type: [string, 'null']
+                    description: Pass as cursor to get the next page. Null on the last page.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags: [Alerts]
+      operationId: createAlert
+      summary: Post an alert for drivers
+      description: "Network-wide alerts (`scope: NETWORK`) can only be posted by the installation administrator, so the API cannot post them."
+      x-required-permission: api.alerts.write
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AlertInput'
+      responses:
+        '201':
+          description: The alert was posted.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Alert'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /alerts/targets:
+    get:
+      tags: [Alerts]
+      operationId: listAlertTargets
+      summary: List charge points and locations an alert can target
+      x-required-permission: api.alerts.read
+      responses:
+        '200':
+          description: Charge points and locations available for `stationId` and `location`.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /alerts/{id}:
+    parameters:
+      - $ref: '#/components/parameters/AlertId'
+    put:
+      tags: [Alerts]
+      operationId: updateAlert
+      summary: Change an alert
+      description: Send only the fields to change.
+      x-required-permission: api.alerts.write
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AlertInput'
+      responses:
+        '200':
+          description: The updated alert.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Alert'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [Alerts]
+      operationId: deleteAlert
+      summary: Delete an alert
+      x-required-permission: api.alerts.write
+      responses:
+        '204':
+          description: The alert was deleted.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /complaints:
+    get:
+      tags: [Complaints]
+      operationId: listComplaints
+      summary: List line-cutting complaints
+      description: Read-only through the API. Complaints are resolved in the admin app.
+      x-required-permission: api.complaints.read
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: Complaints, newest first.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, nextCursor]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Complaint'
+                  nextCursor:
+                    type: [string, 'null']
+                    description: Pass as cursor to get the next page. Null on the last page.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /reports/idle:
+    get:
+      tags: [Reports]
+      operationId: getIdleReport
+      summary: Report on idle time at charge points
+      description: Sessions that ended but kept the connector occupied for at least `minMinutes`.
+      x-required-permission: api.reports.read
+      parameters:
+        - name: days
+          in: query
+          required: false
+          description: How many days back to look (1 to 90).
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 90
+            default: 7
+        - name: minMinutes
+          in: query
+          required: false
+          description: Only idle periods at least this long (0 to 1440).
+          schema:
+            type: integer
+            minimum: 0
+            maximum: 1440
+            default: 10
+      responses:
+        '200':
+          description: The idle report.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /reports/complaints-summary:
+    get:
+      tags: [Reports]
+      operationId: getComplaintsSummary
+      summary: Summarise complaints
+      x-required-permission: api.reports.read
+      parameters:
+        - $ref: '#/components/parameters/ReportDays30'
+      responses:
+        '200':
+          description: Complaint counts over the period.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /reports/energy:
+    get:
+      tags: [Reports]
+      operationId: getEnergyReport
+      summary: Report on energy delivered
+      x-required-permission: api.reports.read
+      parameters:
+        - $ref: '#/components/parameters/ReportDays30'
+      responses:
+        '200':
+          description: Energy delivered per charge point and per day.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /reports/usage:
+    get:
+      tags: [Reports]
+      operationId: getUsageReport
+      summary: Report on charge point usage
+      x-required-permission: api.reports.read
+      parameters:
+        - name: days
+          in: query
+          required: false
+          description: How many days back to look (1 to 90).
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 90
+            default: 7
+      responses:
+        '200':
+          description: Session counts and time in use per charge point and per day.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: An API key from a service account, starting `pgk_`. Created in the admin app under API access.
+
+  parameters:
+    Limit:
+      name: limit
+      in: query
+      required: false
+      description: How many items to return on this page (1 to 200).
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 200
+        default: 50
+    Cursor:
+      name: cursor
+      in: query
+      required: false
+      description: The nextCursor from the previous page. Leave out for the first page.
+      schema:
+        type: string
+    StationId:
+      name: id
+      in: path
+      required: true
+      description: The charge point's ID.
+      schema:
+        type: string
+    StationIdCmd:
+      name: stationId
+      in: path
+      required: true
+      description: The charge point's ID.
+      schema:
+        type: string
+    ConnectorId:
+      name: connectorId
+      in: path
+      required: true
+      description: The connector number on the charge point (1 and up).
+      schema:
+        type: integer
+        minimum: 1
+    ZoneId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+    WaitlistId:
+      name: id
+      in: path
+      required: true
+      description: The waitlist entry's ID.
+      schema:
+        type: string
+    PriceRuleId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+    AlertId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+    ReportDays30:
+      name: days
+      in: query
+      required: false
+      description: How many days back to look (1 to 365).
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 365
+        default: 30
+
+  responses:
+    CommandAccepted:
+      description: The charge point was asked to do it. The result shows on the charge point's status once it confirms.
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: true
+    Unauthorized:
+      description: The key is missing, malformed, revoked, expired, or belongs to a disabled service account.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Forbidden:
+      description: The key does not have the permission this operation needs.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ForbiddenError'
+    NotFound:
+      description: The item does not exist on this site.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    BadRequest:
+      description: The request is not valid. `error` says what to fix.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Conflict:
+      description: The request conflicts with the current state.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NeedsConfirmation:
+      description: "The charge point has a session in progress that this request would end. Repeat the request with `confirmEndSession: true` to go ahead."
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/Error'
+              - type: object
+                properties:
+                  needsConfirmation:
+                    type: boolean
+                    enum: [true]
+    CommandFailed:
+      description: The charge point did not answer. `error` says why.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+          description: What went wrong, in words a person can read.
+        code:
+          type: string
+          description: A short code for the kind of error, when there is one.
+          enum: [UNAUTHENTICATED, FORBIDDEN, NOT_FOUND, METHOD_NOT_ALLOWED]
+      example:
+        error: Station not found
+
+    ForbiddenError:
+      allOf:
+        - $ref: '#/components/schemas/Error'
+        - type: object
+          properties:
+            missing:
+              type: array
+              description: The permissions the key lacks for this operation.
+              items:
+                type: string
+      example:
+        error: This API key does not allow this
+        code: FORBIDDEN
+        missing: [api.stations.write]
+
+    Me:
+      type: object
+      required: [serviceAccount, site, permissions]
+      properties:
+        serviceAccount:
+          type: object
+          required: [id, name]
+          properties:
+            id:
+              type: string
+            name:
+              type: string
+        site:
+          type: [object, 'null']
+          properties:
+            slug:
+              type: string
+            name:
+              type: string
+        permissions:
+          type: array
+          items:
+            type: string
+            pattern: '^api\.'
+
+    Connector:
+      type: object
+      properties:
+        connectorId:
+          type: integer
+          minimum: 1
+        status:
+          type: string
+          description: The last status the charge point reported, such as Available, Preparing, Charging, Faulted, or Unavailable.
+        errorCode:
+          type: [string, 'null']
+        operative:
+          type: boolean
+          description: Whether the connector is in service. False takes it out of dispatch.
+        standard:
+          type: [string, 'null']
+          description: Connector standard, published to roaming partners.
+        format:
+          type: [string, 'null']
+        powerType:
+          type: [string, 'null']
+        maxVoltage:
+          type: [integer, 'null']
+        maxAmperage:
+          type: [integer, 'null']
+
+    Station:
+      type: object
+      required: [id, identity, name, zoneId, connectors]
+      properties:
+        id:
+          type: string
+        identity:
+          type: string
+          description: The charge point's OCPP identity (the name it connects with).
+        name:
+          type: string
+        vendor:
+          type: [string, 'null']
+        model:
+          type: [string, 'null']
+        location:
+          type: [string, 'null']
+        latitude:
+          type: [number, 'null']
+        longitude:
+          type: [number, 'null']
+        zoneId:
+          type: [string, 'null']
+        zoneName:
+          type: [string, 'null']
+        online:
+          type: boolean
+          description: Whether the charge point is connected right now.
+        lastSeenAt:
+          type: [string, 'null']
+          format: date-time
+        offlineSince:
+          type: [string, 'null']
+          format: date-time
+        meterStatus:
+          type: [string, 'null']
+        faulted:
+          type: boolean
+        connectors:
+          type: array
+          items:
+            $ref: '#/components/schemas/Connector'
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    StationInput:
+      type: object
+      required: [identity, name]
+      properties:
+        identity:
+          type: string
+          description: The OCPP identity the charge point connects with. Must be unique on the site.
+        name:
+          type: string
+        vendor:
+          type: string
+        model:
+          type: string
+        location:
+          type: string
+        zoneId:
+          type: [string, 'null']
+        latitude:
+          type: [number, 'null']
+          minimum: -90
+          maximum: 90
+        longitude:
+          type: [number, 'null']
+          minimum: -180
+          maximum: 180
+        connectorCount:
+          type: integer
+          minimum: 0
+          default: 1
+          description: How many connectors the charge point has (numbered from 1).
+        connectors:
+          type: array
+          description: Optional details for each connector (standard, format, power type). Published to roaming partners.
+          items:
+            $ref: '#/components/schemas/Connector'
+
+    Zone:
+      type: object
+      required: [id, name, stations, waitingCount]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        stations:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              name:
+                type: string
+              identity:
+                type: string
+        waitingCount:
+          type: integer
+          description: How many drivers are waiting for this zone.
+
+    ZoneInput:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+
+    WaitlistEntry:
+      type: object
+      description: A driver in line. Names, contact details, and licence plates are never returned.
+      required: [id, status, stationId, zoneId, position, createdAt]
+      properties:
+        id:
+          type: string
+        status:
+          type: string
+          enum: [WAITING, NOTIFIED, COMPLETED, CANCELLED, EXPIRED]
+        stationId:
+          type: [string, 'null']
+        zoneId:
+          type: [string, 'null']
+        stationName:
+          type: [string, 'null']
+          description: The charge point the driver is matched to, if any.
+        position:
+          type: [integer, 'null']
+          description: The driver's place in line (1 is next). Null once they are no longer waiting.
+        reservation:
+          type: [object, 'null']
+          properties:
+            connectorId:
+              type: integer
+            status:
+              type: string
+            expiresAt:
+              type: string
+              format: date-time
+        createdAt:
+          type: string
+          format: date-time
+
+    Charge:
+      type: object
+      description: A charge for one session. Payer details and payment links are never returned.
+      required: [id, stationId, transactionId, status, currency, amountCents, durationSeconds, createdAt]
+      properties:
+        id:
+          type: string
+        stationId:
+          type: string
+        transactionId:
+          type: string
+        status:
+          type: string
+          enum: [PENDING, PAID, NEEDS_REVIEW, NO_CHARGE]
+          description: "PENDING: waiting for payment. NEEDS_REVIEW: no meter reading to bill from. NO_CHARGE: the amount came to zero."
+        pricingModel:
+          type: string
+        pricingNote:
+          type: [string, 'null']
+          description: A short summary when surge or complimentary pricing changed the amount.
+        currency:
+          type: string
+        amountCents:
+          type: integer
+          description: The amount still owed, in the smallest currency unit.
+        durationSeconds:
+          type: integer
+        energyWh:
+          type: [integer, 'null']
+        provider:
+          type: [string, 'null']
+        paidAt:
+          type: [string, 'null']
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+
+    PriceRule:
+      type: object
+      required: [id, kind, scope, label, startsAt]
+      properties:
+        id:
+          type: string
+        kind:
+          type: string
+          enum: [SURGE, COMPLIMENTARY]
+        scope:
+          type: string
+          enum: [NETWORK, SITE, ZONE, STATION, POWER_TYPE]
+        zoneId:
+          type: [string, 'null']
+        stationId:
+          type: [string, 'null']
+        powerClass:
+          type: [string, 'null']
+          enum: [AC, DC, null]
+        percent:
+          type: [number, 'null']
+          description: For SURGE, the change in percent (-99 to 300). Null for COMPLIMENTARY.
+        label:
+          type: string
+        startsAt:
+          type: string
+          format: date-time
+        endsAt:
+          type: [string, 'null']
+          format: date-time
+          description: Null means the rule runs until it is deleted.
+
+    PriceRuleInput:
+      type: object
+      properties:
+        kind:
+          type: string
+          enum: [SURGE, COMPLIMENTARY]
+        scope:
+          type: string
+          enum: [SITE, ZONE, STATION, POWER_TYPE]
+          description: NETWORK is for the installation administrator only.
+        zoneId:
+          type: [string, 'null']
+          description: Required when scope is ZONE.
+        stationId:
+          type: [string, 'null']
+          description: Required when scope is STATION.
+        powerClass:
+          type: [string, 'null']
+          enum: [AC, DC, null]
+          description: Required when scope is POWER_TYPE.
+        percent:
+          type: [number, 'null']
+          minimum: -99
+          maximum: 300
+          description: Required for SURGE.
+        label:
+          type: string
+          description: What drivers and reports call this change.
+        startsAt:
+          type: string
+          format: date-time
+        endsAt:
+          type: [string, 'null']
+          format: date-time
+
+    Alert:
+      type: object
+      required: [id, scope, severity, message, startsAt]
+      properties:
+        id:
+          type: string
+        scope:
+          type: string
+          enum: [NETWORK, SITE, LOCATION, STATION]
+        stationId:
+          type: [string, 'null']
+        location:
+          type: [string, 'null']
+        severity:
+          type: string
+          enum: [INFO, WARNING]
+        message:
+          type: string
+          maxLength: 500
+        startsAt:
+          type: string
+          format: date-time
+        endsAt:
+          type: [string, 'null']
+          format: date-time
+
+    AlertInput:
+      type: object
+      properties:
+        scope:
+          type: string
+          enum: [SITE, LOCATION, STATION]
+          description: NETWORK is for the installation administrator only.
+        stationId:
+          type: [string, 'null']
+          description: Required when scope is STATION.
+        location:
+          type: [string, 'null']
+          description: Required when scope is LOCATION. Must match a location a charge point has.
+        severity:
+          type: string
+          enum: [INFO, WARNING]
+          default: INFO
+        message:
+          type: string
+          maxLength: 500
+        startsAt:
+          type: string
+          format: date-time
+          description: When drivers start seeing the alert. Defaults to now.
+        endsAt:
+          type: [string, 'null']
+          format: date-time
+
+    Complaint:
+      type: object
+      required: [id, status, createdAt, station, queueEntry]
+      properties:
+        id:
+          type: string
+        status:
+          type: string
+          enum: [OPEN, RESOLVED, DISMISSED]
+        note:
+          type: [string, 'null']
+        createdAt:
+          type: string
+          format: date-time
+        resolvedAt:
+          type: [string, 'null']
+          format: date-time
+        station:
+          type: object
+          properties:
+            id:
+              type: string
+            name:
+              type: string
+        queueEntry:
+          type: object
+          description: The waitlist entry the complaint is about. Only its ID and status are returned; the driver's details are not.
+          properties:
+            id:
+              type: string
+            status:
+              type: string
+
+    ConfirmEndSession:
+      type: object
+      properties:
+        confirmEndSession:
+          type: boolean
+          default: false
+          description: Set to true to end a session in progress on this connector.

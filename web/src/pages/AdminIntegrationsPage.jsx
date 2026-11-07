@@ -4,15 +4,80 @@ import {
   Button,
   Chip,
   Container,
+  FormControlLabel,
   MenuItem,
   Paper,
+  Radio,
+  RadioGroup,
   Stack,
   TextField,
   Typography,
 } from '@mui/material';
+import { formatWhen } from '../components/ScheduleFields.jsx';
 import { Link as RouterLink } from 'react-router-dom';
 import { api } from '../api/client.js';
 import { useAuth } from '../context/AuthContext.jsx';
+
+// What the site does while its payment provider is unavailable.
+function OutageModeCard({ outage, canManage, onSaved }) {
+  const [mode, setMode] = useState(outage.mode);
+  const [error, setError] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    setMode(outage.mode);
+  }, [outage.mode]);
+
+  async function save() {
+    setError('');
+    setSaving(true);
+    try {
+      await api.put('/api/admin/integrations/outage-mode', { mode });
+      onSaved();
+    } catch (err) {
+      setError(err.response?.data?.error ?? 'Could not save.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Paper variant="outlined" sx={{ p: 2.5 }}>
+      <Typography variant="h6" fontWeight={600}>
+        When the payment provider is unavailable
+      </Typography>
+      <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+        A provider is checked every minute. If it stops answering, the site takes the action you choose below until it
+        answers again.
+      </Typography>
+      {outage.current && (
+        <Alert severity="warning" sx={{ mb: 2 }}>
+          {outage.current.provider} has been unavailable since {formatWhen(outage.current.since)}. {outage.current.reason}
+        </Alert>
+      )}
+      {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+      <RadioGroup value={mode} onChange={(e) => setMode(e.target.value)}>
+        <FormControlLabel
+          value="COMPLIMENTARY"
+          disabled={!canManage}
+          control={<Radio />}
+          label="Charging is free until the provider recovers. Sessions that overlap the outage are not charged."
+        />
+        <FormControlLabel
+          value="LOCKOUT"
+          disabled={!canManage}
+          control={<Radio />}
+          label="Lock out: drivers can't join the waitlist, and no connector is offered to anyone waiting, until the provider recovers. Sessions already under way continue."
+        />
+      </RadioGroup>
+      {canManage && (
+        <Button variant="contained" sx={{ mt: 1.5 }} onClick={save} disabled={saving || mode === outage.mode}>
+          {saving ? 'Saving…' : 'Save'}
+        </Button>
+      )}
+    </Paper>
+  );
+}
 
 // Each provider's fields. `secret` fields are never shown again once saved:
 // the server only says whether a value is saved.
@@ -253,6 +318,9 @@ export function AdminIntegrationsPage() {
       </Typography>
 
       <Stack spacing={3}>
+        {data.providerOutage && (
+          <OutageModeCard outage={data.providerOutage} canManage={canManage} onSaved={load} />
+        )}
         {!data.encryptionReady && (
           <Alert severity="warning">
             Secret keys can't be saved yet. The server administrator needs to set <code>CONFIG_ENCRYPTION_KEY</code> in the

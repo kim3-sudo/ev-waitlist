@@ -6,10 +6,12 @@ import { tryDispatchZone } from '../services/dispatcher.js';
 import { getSettings, resolvePlateRegion, validateIdentifiers } from '../services/settingsService.js';
 import { contactProblem, smsChoice } from '../services/notifier.js';
 import { roamingWarningError } from '../services/roaming.js';
+import { stationNotices } from '../services/notices.js';
+import { lockedOut, LOCKOUT_MESSAGE } from '../services/payments/providerOutage.js';
 
 export const zonesRouter = Router();
 
-function serializeZone(zone) {
+function serializeZone(zone, notices) {
   const stations = zone.stations.map((station) => ({
     id: station.id,
     name: station.name,
@@ -19,6 +21,7 @@ function serializeZone(zone) {
       .filter((c) => c.connectorId > 0)
       .sort((a, b) => a.connectorId - b.connectorId)
       .map((c) => ({ connectorId: c.connectorId, status: c.status })),
+    notices: notices.get(station.id) ?? { alerts: [], pricing: [] },
   }));
 
   return {
@@ -37,7 +40,8 @@ zonesRouter.get('/', async (req, res) => {
     },
     orderBy: { name: 'asc' },
   });
-  res.json(zones.map(serializeZone));
+  const notices = await stationNotices(zones.flatMap((zone) => zone.stations));
+  res.json(zones.map((zone) => serializeZone(zone, notices)));
 });
 
 zonesRouter.post('/:id/waitlist', async (req, res) => {
@@ -63,6 +67,8 @@ zonesRouter.post('/:id/waitlist', async (req, res) => {
 
   const roamingError = await roamingWarningError(req.body);
   if (roamingError) return res.status(roamingError.status).json(roamingError.body);
+
+  if (await lockedOut()) return res.status(503).json({ error: LOCKOUT_MESSAGE });
 
   const entry = await joinQueue(
     { zoneId: zone.id },

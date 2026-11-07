@@ -7,10 +7,14 @@ import { currentTenantId, DEFAULT_TENANT_ID } from './tenancy/context.js';
 export const rawPrisma = new PrismaClient();
 
 // Models whose rows belong to exactly one site. Connector is reached through
-// Station, so it is not listed.
+// Station, so it is not listed. Alert and PriceRule are not listed either: a
+// network-wide row has no site, so they are filtered by hand (see tenancy/context.js
+// ownOrNetworkWhere) and read through rawPrisma.
 const TENANT_SCOPED_MODELS = new Set([
   'admin',
   'customRole',
+  'serviceAccount',
+  'apiKey',
   'zone',
   'station',
   'queueEntry',

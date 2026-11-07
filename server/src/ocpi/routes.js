@@ -11,6 +11,7 @@ import { locationOf, tariffOf, sessionOf, cdrOf, stationIsPublishable, TARIFF_ID
 import { enqueue } from './outbox.js';
 import { runCommand } from './commands.js';
 import { getPaymentSettings } from '../services/payments/paymentSettingsService.js';
+import { priceAdjusterForSession } from '../services/payments/priceRuleService.js';
 
 // The OCPI interface of one site, mounted at /ocpi/<slug>. It works only while
 // roaming is on for the site.
@@ -267,7 +268,19 @@ ocpiRouter.get(`/${VERSION}/cdrs`, activePartnerAuth, async (req, res) => {
   const tokens = await prisma.ocpiToken.findMany({ where: { partnerId: req.partner.id } });
   const byUid = new Map(tokens.map((t) => [t.uid, t]));
   const page = paginate(req, res, txs);
-  ok(res, page.map((tx) => cdrOf(op, tx.station, tx, byUid.get(tx.idTag), settings)));
+  const cdrs = [];
+  for (const tx of page) {
+    const adjustmentAt = await priceAdjusterForSession({
+      tenantId: tx.tenantId,
+      stationId: tx.stationId,
+      zoneId: tx.station.zoneId,
+      connectorId: tx.connectorId,
+      startedAt: tx.startedAt,
+      stoppedAt: tx.stoppedAt,
+    });
+    cdrs.push(cdrOf(op, tx.station, tx, byUid.get(tx.idTag), settings, adjustmentAt));
+  }
+  ok(res, cdrs);
 });
 
 // The partner pushes its drivers' tokens to us.

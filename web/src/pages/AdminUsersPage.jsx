@@ -35,6 +35,8 @@ import EditIcon from '@mui/icons-material/Edit';
 import { api } from '../api/client.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useSettings } from '../context/SettingsContext.jsx';
+import { usePagedList } from '../api/paged.js';
+import { LoadMore } from '../components/LoadMore.jsx';
 
 // Role options come from the server: the built-in roles plus any custom roles.
 function CreateUserDialog({ roleOptions, onClose, onSaved }) {
@@ -218,7 +220,8 @@ function RoleDialog({ role, catalog, callerPermissions, onClose, onSaved }) {
 export function AdminUsersPage() {
   const { email: currentEmail } = useAuth();
   const { settings, refresh: refreshSettings } = useSettings();
-  const [users, setUsers] = useState([]);
+  const list = usePagedList('/api/admin/users');
+  const users = list.items;
   const [roles, setRoles] = useState([]);
   const [catalog, setCatalog] = useState([]);
   const [callerPermissions, setCallerPermissions] = useState([]);
@@ -231,11 +234,7 @@ export function AdminUsersPage() {
   const roleOptions = roles.map((r) => ({ value: r.name, label: r.name, help: r.description }));
 
   async function refresh() {
-    const [{ data: userList }, { data: roleData }] = await Promise.all([
-      api.get('/api/admin/users'),
-      api.get('/api/admin/roles'),
-    ]);
-    setUsers(userList);
+    const [, { data: roleData }] = await Promise.all([list.reload(), api.get('/api/admin/roles')]);
     setRoles(roleData.roles);
     setCatalog(roleData.permissions);
     setCallerPermissions(roleData.callerPermissions);
@@ -381,6 +380,7 @@ export function AdminUsersPage() {
             ))}
           </TableBody>
         </Table>
+        <LoadMore hasMore={list.hasMore} loading={list.loading} onLoadMore={list.loadMore} />
       </Paper>
 
       <Paper variant="outlined" sx={{ mt: 3 }}>

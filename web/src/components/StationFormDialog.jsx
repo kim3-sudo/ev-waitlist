@@ -68,7 +68,7 @@ export function StationFormDialog({ station, onClose, onSaved }) {
   }
 
   useEffect(() => {
-    api.get('/api/admin/zones').then(({ data }) => setZones(data));
+    api.get('/api/admin/zones', { params: { limit: 200 } }).then(({ data }) => setZones(data.data));
   }, []);
 
   function update(field) {

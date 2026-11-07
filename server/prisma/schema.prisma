@@ -63,6 +63,12 @@ model Tenant {
   ocpiOutbox            OcpiOutbox[]
   paymentHolds          PaymentHold[]
   messageTemplates      MessageTemplate[]
+  alerts                Alert[]
+  priceRules            PriceRule[]
+  serviceAccounts       ServiceAccount[]
+  apiKeys               ApiKey[]
+  providerOutages       ProviderOutage[]
+  auditEvents           AuditEvent[]
 }
 
 model Admin {
@@ -163,6 +169,7 @@ model Zone {
 
   stations     Station[]
   queueEntries QueueEntry[]
+  priceRules   PriceRule[]
 
   @@unique([tenantId, name])
 }
@@ -213,6 +220,8 @@ model Station {
   meterSamples          MeterSample[]
   events                StationEvent[]
   charges               Charge[]
+  alerts                Alert[]
+  priceRules            PriceRule[]
 
   @@index([tenantId])
 }
@@ -431,6 +440,98 @@ model CustomRole {
   @@unique([tenantId, name])
 }
 
+// A non-human principal for the REST API (/api/v1). It holds only api.* permissions
+// and authenticates with one or more API keys.
+model ServiceAccount {
+  id          String   @id @default(cuid())
+  tenant      Tenant   @relation(fields: [tenantId], references: [id])
+  tenantId    String
+  name        String
+  description String?
+  // JSON array of api.* permission keys from auth/permissions.js.
+  permissions String   @default("[]") // @longtext
+  // A disabled account's keys stop working, but they can be re-enabled.
+  disabled    Boolean  @default(false)
+  // The admin who created the account. Kept as text so the row survives if that admin is removed.
+  createdBy   String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  keys        ApiKey[]
+
+  @@unique([tenantId, name])
+}
+
+// An API key. Only its SHA-256 hash is stored; the full key is shown once, at creation.
+model ApiKey {
+  id               String         @id @default(cuid())
+  tenant           Tenant         @relation(fields: [tenantId], references: [id])
+  tenantId         String
+  serviceAccount   ServiceAccount @relation(fields: [serviceAccountId], references: [id], onDelete: Cascade)
+  serviceAccountId String
+  name             String
+  // The first characters of the key, shown in the admin UI to tell keys apart.
+  prefix           String
+  keyHash          String         @unique
+  expiresAt        DateTime?
+  revokedAt        DateTime?
+  lastUsedAt       DateTime?
+  createdAt        DateTime       @default(now())
+
+  @@index([tenantId])
+  @@index([serviceAccountId])
+}
+
+// One row per audit event. The events form a single hash chain across the whole
+// installation: each row's hash covers its own fields and the previous row's hash,
+// so changing or removing a row breaks the chain (see audit/chain.js).
+model AuditEvent {
+  id          String    @id @default(cuid())
+  // 1, 2, 3 ... across the installation. The chain is ordered by this.
+  seq         Int       @unique
+  at          DateTime  @default(now())
+  // Null for installation-wide events (sites, the operator, network-wide settings).
+  tenant      Tenant?   @relation(fields: [tenantId], references: [id])
+  tenantId    String?
+  // ADMIN, SERVICE_ACCOUNT, ANONYMOUS, or SYSTEM.
+  actorType   String
+  actorId     String?
+  // The name or e-mail at the time, so the entry still reads correctly after the actor is removed.
+  actorLabel  String?
+  // Dotted, e.g. service_account.key.revoke.
+  action      String
+  targetType  String?
+  targetId    String?
+  targetLabel String?
+  // SUCCESS, DENIED, or FAILED.
+  outcome     String
+  reason      String?
+  // JSON: field-level before and after values. Secret fields are recorded as [set] or [cleared].
+  changes     String?   // @longtext
+  // Address at the logging level chosen in AuditSettings: full, truncated, or none.
+  ip          String?
+  userAgent   String?
+  requestId   String?
+  prevHash    String
+  hash        String    @unique
+  // When the event was delivered to the syslog/SIEM exporter. Null if it has not been.
+  exportedAt  DateTime?
+
+  @@index([tenantId, seq])
+  @@index([action])
+  @@index([at])
+  @@index([exportedAt])
+}
+
+// Installation-wide audit settings (a singleton row, id "singleton").
+model AuditSettings {
+  id            String   @id @default("singleton")
+  // How long events are kept. Events that have not yet been exported are kept regardless.
+  retentionDays Int      @default(30)
+  // FULL, TRUNCATED (IPv4 to /24, IPv6 to /48), or NONE.
+  ipLogging     String   @default("TRUNCATED")
+  updatedAt     DateTime @updatedAt
+}
+
 // One row per site: how drivers are charged and who collects payment.
 model PaymentSettings {
   tenant                      Tenant    @relation(fields: [tenantId], references: [id])
@@ -470,6 +571,9 @@ model PaymentSettings {
   meterMaxJumpWh              Int       @default(50000)
   // Inputs to the rate calculator (JSON). Kept so the price check can use the cost basis.
   rateCalculatorInputs        String? // @longtext
+  // What happens while the payment provider is unavailable (see services/payments/providerOutage.js):
+  // COMPLIMENTARY (charging is free until it recovers) or LOCKOUT (no new waitlist joins or offers).
+  providerOutageMode          String    @default("LOCKOUT")
   // Pre-authorization: the amount held on a waitlisted driver's card before they
   // start. Null turns holds off. The session is captured at its actual amount.
   preauthCents                Int?
@@ -501,6 +605,9 @@ model Charge {
   // stop reading), STOP_TRANSACTION, or NONE. energyNote explains a review.
   energySource      String?
   energyNote        String?
+  // Set when a price change (surge or complimentary) changed the amount: a short
+  // summary for the admin charges list. See services/payments/priceRules.js.
+  pricingNote       String?
   // PENDING -> PAID. NEEDS_REVIEW: no meter reading to bill from.
   // NO_CHARGE: amount came to zero.
   status            String      @default("PENDING")
@@ -545,6 +652,85 @@ model PaymentHold {
 
   @@index([tenantId])
   @@index([tenantId, idTag])
+}
+
+// A notice about charge points, shown to drivers and admins while it is active.
+// Scope decides what it is about: the whole network (every site), this site, the
+// charge points at one location (matched on Station.location), or one charge point.
+model Alert {
+  id               String    @id @default(cuid())
+  // Null for a network-wide alert (set by the installation administrator; it is
+  // shown on every site).
+  tenant           Tenant?   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenantId         String?
+  // NETWORK | SITE | LOCATION | STATION
+  scope            String
+  station          Station?  @relation(fields: [stationId], references: [id], onDelete: Cascade)
+  stationId        String?
+  // LOCATION scope: the charge points whose location text equals this.
+  location         String?
+  // INFO | WARNING
+  severity         String    @default("INFO")
+  message          String // @longtext
+  startsAt         DateTime  @default(now())
+  // Null: the alert stays until it is removed.
+  endsAt           DateTime?
+  createdByAdminId String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@index([tenantId])
+  @@index([stationId])
+}
+
+// A stretch of time the site's payment provider was judged unavailable. endedAt is null
+// while the outage is ongoing.
+model ProviderOutage {
+  id        String    @id @default(cuid())
+  tenant    Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenantId  String
+  provider  String
+  // The last error from the health check, shortened for the admin.
+  reason    String
+  startedAt DateTime  @default(now())
+  endedAt   DateTime?
+
+  @@index([tenantId, endedAt])
+}
+
+// A temporary change to what drivers pay. SURGE raises or lowers the price by `percent`.
+// COMPLIMENTARY makes charging free. Each applies to the whole network, this site, a
+// group of charge points (a zone), one charge point, or all AC or all DC connectors.
+// Precedence and the time rules are in services/payments/priceRules.js.
+model PriceRule {
+  id               String    @id @default(cuid())
+  // Null for a network-wide rule (set by the installation administrator; it applies at every site).
+  tenant           Tenant?   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenantId         String?
+  // SURGE | COMPLIMENTARY
+  kind             String
+  // NETWORK | SITE | ZONE | STATION | POWER_TYPE
+  scope            String
+  zone             Zone?     @relation(fields: [zoneId], references: [id], onDelete: Cascade)
+  zoneId           String?
+  station          Station?  @relation(fields: [stationId], references: [id], onDelete: Cascade)
+  stationId        String?
+  // POWER_TYPE scope: AC or DC.
+  powerClass       String?
+  // SURGE only: the change in percent. Positive raises the price, negative lowers it.
+  percent          Int?
+  // A short reason shown to admins and, when it is public, to drivers.
+  label            String    @default("")
+  startsAt         DateTime  @default(now())
+  // SURGE needs an end. COMPLIMENTARY may stay on until it is turned off.
+  endsAt           DateTime?
+  createdByAdminId String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@index([tenantId])
+  @@index([stationId])
+  @@index([zoneId])
 }
 
 // Runtime settings edited in the admin UI, one row per site and key (public

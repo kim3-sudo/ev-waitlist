@@ -1,3 +1,4 @@
+import { readPageRequest, afterPosition, pageOf } from '../pagination.js';
 import { Router } from 'express';
 import { prisma } from '../db.js';
 import { registry } from '../services/stationRegistry.js';
@@ -120,11 +121,16 @@ async function resolveZoneId(zoneId) {
 }
 
 adminStationsRouter.get('/', async (req, res) => {
-  const stations = await prisma.station.findMany({
+  const page = readPageRequest(req.query);
+  if (page.error) return res.status(400).json({ error: page.error });
+  const rows = await prisma.station.findMany({
+    where: afterPosition(page.position, 'name', { direction: 'asc' }),
     include: { connectors: true, zone: true },
-    orderBy: { name: 'asc' },
+    orderBy: [{ name: 'asc' }, { id: 'asc' }],
+    take: page.limit + 1,
   });
-  res.json(stations.map(serialize));
+  const result = pageOf(rows, page.limit, (s) => ({ v: s.name, i: s.id }));
+  res.json({ data: result.data.map(serialize), nextCursor: result.nextCursor });
 });
 
 // Used by the add-charge-point wizard to check an identity before creating the station.

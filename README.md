@@ -8,6 +8,8 @@
 - [Upgrading](docs/upgrading.md): moving an existing single-site install to this version.
 - [Operator checklist](docs/operator-checklist.md): what to set up and review before drivers use the site.
 - [Roaming (OCPI)](docs/ocpi.md): what roaming needs, and what is not built yet.
+- [Audit log](docs/audit.md): what is recorded, tamper evidence, retention, and sending events to a SIEM over TLS.
+- [REST API](docs/api.md): connecting other systems with service accounts and API keys. The reference is served at `/api/docs`.
 - [Security](SECURITY.md): how to report a vulnerability.
 
 ## To Run

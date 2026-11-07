@@ -24,6 +24,9 @@ import { adminSamlRouter } from './routes/admin.saml.routes.js';
 import { adminSetupRouter } from './routes/admin.setup.routes.js';
 import { adminRolesRouter } from './routes/admin.roles.routes.js';
 import { adminPaymentsRouter } from './routes/admin.payments.routes.js';
+import { adminPriceRulesRouter } from './routes/admin.priceRules.routes.js';
+import { adminAlertsRouter } from './routes/admin.alerts.routes.js';
+import { noticesRouter } from './routes/notices.routes.js';
 import { payRouter } from './routes/pay.routes.js';
 import { stripeWebhookHandler } from './routes/stripeWebhook.routes.js';
 import { squareWebhookHandler } from './routes/squareWebhook.routes.js';
@@ -35,6 +38,11 @@ import { adminPrivacyRouter } from './routes/admin.privacy.routes.js';
 import { adminRoamingRouter } from './routes/admin.roaming.routes.js';
 import { ocpiRouter } from './ocpi/routes.js';
 import { adminOcpiRouter } from './routes/admin.ocpi.routes.js';
+import { adminAuditRouter } from './routes/admin.audit.routes.js';
+import { auditHttp } from './audit/httpAudit.js';
+import { adminServiceAccountsRouter } from './routes/admin.serviceAccounts.routes.js';
+import { apiV1Router } from './routes/api.v1/index.js';
+import { API_DOCS_DIR } from './apiDocs.js';
 
 // Builds the REST API's Express app. Deliberately has no side effects
 // (no listen(), no OCPP central system, no background timers) so it can be
@@ -50,6 +58,8 @@ export function createApp() {
   app.post('/api/t/:slug/payments/stripe/webhook', tenantFromSlug, express.raw({ type: 'application/json' }), stripeWebhookHandler);
   app.post('/api/t/:slug/payments/square/webhook', tenantFromSlug, express.raw({ type: 'application/json' }), squareWebhookHandler);
   app.use(express.json());
+  // Records changes and refused requests in the admin app and the API (see audit/httpAudit.js).
+  app.use(['/api/admin', '/api/v1'], auditHttp);
 
   app.get('/api/health', (req, res) => res.json({ ok: true }));
 
@@ -57,7 +67,12 @@ export function createApp() {
   app.use('/api/auth/saml', samlRouter);
   app.use('/api/stations', stationsRouter);
   app.use('/api/zones', zonesRouter);
+  app.use('/api/notices', noticesRouter);
   app.use('/api/waitlist', waitlistRouter);
+  // The public REST API. Its routes authenticate with API keys, not admin sessions.
+  app.use('/api/v1', apiV1Router);
+  // The Redocly reference for the API (built by npm run docs:api:build).
+  app.use('/api/docs', express.static(API_DOCS_DIR));
   // Each area has a view and a manage permission. Reads need view, writes need manage.
   app.use('/api/admin/stations', requireAdmin, requireReadOrManage('stations.view', 'stations.manage'), adminStationsRouter);
   // Commands to charge points. Its own prefix, so viewers who can see stations are not blocked by it.
@@ -72,6 +87,7 @@ export function createApp() {
   sitePublicRouter.use('/auth/saml', samlRouter);
   sitePublicRouter.use('/stations', stationsRouter);
   sitePublicRouter.use('/zones', zonesRouter);
+  sitePublicRouter.use('/notices', noticesRouter);
   sitePublicRouter.use('/waitlist', waitlistRouter);
   sitePublicRouter.use('/settings', settingsRouter);
   sitePublicRouter.use('/pay', payRouter);
@@ -81,11 +97,15 @@ export function createApp() {
   app.use('/api/admin/reports', requirePermission('reports.view'), adminReportsRouter);
   app.use('/api/admin/reports', requirePermission('reports.view'), adminUsageRouter);
   app.use('/api/admin/complaints', requireAdmin, requireReadOrManage('complaints.view', 'complaints.manage'), adminComplaintsRouter);
+  app.use('/api/admin/audit', requireAdmin, adminAuditRouter);
+  app.use('/api/admin/service-accounts', requireAdmin, requireReadOrManage('serviceAccounts.view', 'serviceAccounts.manage'), adminServiceAccountsRouter);
   app.use('/api/admin/users', requirePermission('users.manage'), adminUsersRouter);
   app.use('/api/admin/roles', requirePermission('users.manage'), adminRolesRouter);
   app.use('/api/admin/saml', requirePermission('sso.manage'), adminSamlRouter);
   app.use('/api/admin/setup', requirePermission('branding.manage'), adminSetupRouter);
   app.use('/api/admin/payments', requireAdmin, requireReadOrManage('payments.view', 'payments.manage'), adminPaymentsRouter);
+  app.use('/api/admin/price-rules', requireAdmin, requireReadOrManage('payments.view', 'payments.manage'), adminPriceRulesRouter);
+  app.use('/api/admin/alerts', requirePermission('alerts.manage'), adminAlertsRouter);
   app.use('/api/admin/integrations', requirePermission('integrations.manage'), adminIntegrationsRouter);
   app.use('/api/admin/email', requirePermission('integrations.manage'), adminEmailRouter);
   app.use('/api/admin/sms', requirePermission('integrations.manage'), adminSmsRouter);

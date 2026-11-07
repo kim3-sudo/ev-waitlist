@@ -1,5 +1,9 @@
-import { Alert, Box, Table, TableBody, TableCell, TableHead, TableRow, Typography } from '@mui/material';
+import { Alert, Box, Link, Table, TableBody, TableCell, TableHead, TableRow, Typography } from '@mui/material';
 import { Link as RouterLink } from 'react-router-dom';
+
+// The API is served by the API server, at the same address the admin app calls.
+const API_BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:4000';
+const API_DOCS_URL = `${API_BASE}/api/docs`;
 
 // Help articles. `permission` (optional) is the permission key a role needs to see
 // the article. Articles without one are visible to everyone who can sign in.
@@ -35,7 +39,7 @@ export const HELP_SECTIONS = [
   { title: 'Sites', ids: ['multiple-sites'] },
   {
     title: 'Administration',
-    ids: ['manage-users', 'custom-roles', 'system-settings', 'branding-fonts', 'integrations'],
+    ids: ['manage-users', 'custom-roles', 'api-access', 'audit-log', 'system-settings', 'branding-fonts', 'integrations'],
   },
 ];
 
@@ -662,8 +666,8 @@ export const HELP_ARTICLES = [
           Select <strong>Open calculator</strong> to open the energy cost calculator. Enter what the energy costs you: the grid
           price, any distribution charge, your monthly charges, and your solar capacity if you have it. The calculator works
           out the cost of each kWh and adds your profit margin. Your entries save themselves as you type, so you can close the
-          window at any time. Until you enter your own figures, the calculator uses conservative starting values, with higher
-          costs than a typical bill, so the price stays on the safe side. The <strong>price check</strong> compares the highest price a driver pays with
+          window at any time. Until you enter your own figures, the calculator uses low starting values, so the <strong>price check</strong> flags a
+          high price by default. The price check compares the highest price a driver pays with
           that cost, and warns you when the price is far above it. The warning is stronger for Level 2 chargers, where a
           high rate is more often a typing mistake. You can still save a high rate after you confirm it.
         </Para>
@@ -1255,6 +1259,144 @@ export const HELP_ARTICLES = [
         </Para>
         <Alert severity="info">
           Built-in roles can't be edited. To delete a custom role, first move every user with that role to another role.
+        </Alert>
+      </>
+    ),
+  },
+  {
+    id: 'api-access',
+    title: 'Connecting other systems with the API',
+    permission: 'serviceAccounts.view',
+    body: (
+      <>
+        <Para>
+          Use the API when another system needs to read or change your charge points, zones, waitlist, charges, prices,
+          or driver alerts. Each connection gets a <strong>service account</strong>: its own set of permissions and one or
+          more <strong>API keys</strong>. A person's login is never shared with another system.
+        </Para>
+        <Typography variant="h6" gutterBottom>
+          Create a service account
+        </Typography>
+        <Steps>
+          <li>Open <strong>Admin</strong>, select <strong>API access</strong>, and select <strong>Add service account</strong>.</li>
+          <li>Enter a name that says what the account is for, such as <em>Parking dashboard</em>.</li>
+          <li>
+            Tick only the permissions it needs. Read permissions let it look; write and control permissions let it change
+            things. You can only tick permissions you hold yourself.
+          </li>
+          <li>Select <strong>Save</strong>.</li>
+        </Steps>
+        <Typography variant="h6" gutterBottom>
+          Create an API key
+        </Typography>
+        <Steps>
+          <li>On the account's row, select the key icon.</li>
+          <li>Enter a key name, such as <em>Production server</em>, and an expiry date if you want one.</li>
+          <li>Select <strong>Create key</strong>, then copy the key right away.</li>
+        </Steps>
+        <Alert severity="warning" sx={{ mb: 2 }}>
+          The full key is shown only once. It starts with <code>pgk_</code>. If you lose it, create a new key and revoke the
+          old one.
+        </Alert>
+        <Typography variant="h6" gutterBottom>
+          Use the key
+        </Typography>
+        <Para>Send the key in the Authorization header of every request. For example, to list your charge points:</Para>
+        <Box component="pre" sx={{ p: 2, mb: 2, overflowX: 'auto', bgcolor: 'action.hover', borderRadius: 1 }}>
+          {`curl -H "Authorization: Bearer pgk_..." ${API_BASE}/api/v1/stations`}
+        </Box>
+        <Para>
+          The{' '}
+          <Link href={API_DOCS_URL} target="_blank" rel="noopener noreferrer">
+            API reference
+          </Link>{' '}
+          lists every endpoint, the permission each one needs, and the shape of the requests and responses.
+        </Para>
+        <Typography variant="h6" gutterBottom>
+          Stop access
+        </Typography>
+        <Para>
+          To replace a key, create a new one, update the system that uses it, and then revoke the old key. To stop every key
+          on an account at once, turn the account <strong>Disabled</strong> on its edit screen. Deleting an account removes
+          its keys for good.
+        </Para>
+        <Typography variant="h6" gutterBottom>
+          Let someone build integrations
+        </Typography>
+        <Para>
+          To let a person manage service accounts without giving them the full Admin role, assign the built-in{' '}
+          <strong>API Developer</strong> role under <RouterLink to="/admin/users">Users and roles</RouterLink>. It can
+          create accounts and keys, grant any API permission, and view your other settings, but it can't change them.
+        </Para>
+        <Alert severity="info">
+          The API can't do everything the admin pages can. Network-wide pricing and alerts stay with the installation
+          administrator, and the API never returns driver names, contact details, licence plates, or payment links.
+        </Alert>
+      </>
+    ),
+  },
+  {
+    id: 'audit-log',
+    title: 'Reading the audit log',
+    permission: 'audit.view',
+    body: (
+      <>
+        <Para>
+          The audit log records what happens in your installation: changes to charge points, prices, users and roles,
+          settings, and API keys, along with sign-ins and requests that were refused. Open <strong>Admin</strong> and select{' '}
+          <strong>Audit log</strong>.
+        </Para>
+        <Typography variant="h6" gutterBottom>
+          Find an event
+        </Typography>
+        <Para>
+          Use the filters to narrow the list by action (for example <em>auth.login</em>), outcome, who did it, or a date
+          range. Select <strong>Details</strong> to see what changed. Field values are shown for the important changes, such
+          as settings and prices. Passwords, keys, and tokens are never shown: a changed secret appears as <em>[set]</em> or{' '}
+          <em>[cleared]</em>.
+        </Para>
+        <Typography variant="h6" gutterBottom>
+          Check that the log has not been changed
+        </Typography>
+        <Para>
+          Each entry is linked to the one before it. Select <strong>Check the chain</strong> to confirm that no entry has
+          been changed, removed, or reordered. If the check fails, the message says which entry is affected.
+        </Para>
+        <Typography variant="h6" gutterBottom>
+          Keep, export, and share
+        </Typography>
+        <Steps>
+          <li>
+            Under <strong>Retention and addresses</strong>, choose how long events are kept. The default is 30 days. Events
+            that have not yet been sent to a SIEM are kept, however old they are.
+          </li>
+          <li>
+            Choose how client addresses are stored: the full address, a truncated one (IPv4 to /24, IPv6 to /48), or not at
+            all. Choose less where the law requires it.
+          </li>
+          <li>
+            Select <strong>Download CSV</strong> to export the events you are looking at. Exporting needs the{' '}
+            <strong>Download the audit log</strong> permission, which is separate from viewing.
+          </li>
+        </Steps>
+        <Alert severity="info">
+          Retention and address settings apply to the whole installation, so only the installation administrator can change
+          them.
+        </Alert>
+        <Typography variant="h6" gutterBottom>
+          Send events to a SIEM
+        </Typography>
+        <Para>
+          An operator can have the server send every event, in order, to a syslog server or SIEM over TLS. Set these
+          environment variables before starting the server: <code>AUDIT_SYSLOG_URL</code> (for example{' '}
+          <code>tls://siem.example.com:6514</code>), <code>AUDIT_SYSLOG_FORMAT</code> (<code>json</code> or{' '}
+          <code>cef</code>), and, for TLS, <code>AUDIT_SYSLOG_CA_FILE</code> with the certificate of the SIEM's CA. Add{' '}
+          <code>AUDIT_SYSLOG_CERT_FILE</code> and <code>AUDIT_SYSLOG_KEY_FILE</code> if the SIEM requires a client
+          certificate. The page shows whether events are being sent and how many are waiting.
+        </Para>
+        <Alert severity="warning">
+          If an event cannot be recorded, the request still goes ahead and the server log names the action that was not
+          recorded. The page also shows how many events have failed since the server started.
         </Alert>
       </>
     ),

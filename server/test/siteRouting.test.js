@@ -52,7 +52,7 @@ describe('admin sessions', () => {
     const token = await login(siteBAdmin.email);
     const res = await request(app).get('/api/admin/stations').set(bearer(token));
     assert.equal(res.status, 200);
-    assert.deepEqual(res.body.map((s) => s.name), ['Site B bay']);
+    assert.deepEqual(res.body.data.map((s) => s.name), ['Site B bay']);
   });
 
   it('a site-B admin cannot change a default-site station', async () => {
@@ -71,7 +71,7 @@ describe('admin sessions', () => {
   it('the default admin does not see site-B stations', async () => {
     const token = await login(defaultAdmin.email);
     const res = await request(app).get('/api/admin/stations').set(bearer(token));
-    assert.deepEqual(res.body.map((s) => s.name), ['Default bay']);
+    assert.deepEqual(res.body.data.map((s) => s.name), ['Default bay']);
   });
 });
 

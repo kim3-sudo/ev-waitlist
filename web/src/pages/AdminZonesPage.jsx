@@ -24,6 +24,8 @@ import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
 import { api } from '../api/client.js';
 import { useAuth } from '../context/AuthContext.jsx';
+import { usePagedList } from '../api/paged.js';
+import { LoadMore } from '../components/LoadMore.jsx';
 
 function ZoneFormDialog({ zone, onClose, onSaved }) {
   const isEdit = Boolean(zone);
@@ -81,19 +83,12 @@ function ZoneFormDialog({ zone, onClose, onSaved }) {
 export function AdminZonesPage() {
   const { can } = useAuth();
   const canManage = can('zones.manage');
-  const [zones, setZones] = useState([]);
+  const list = usePagedList('/api/admin/zones');
+  const zones = list.items;
+  const refresh = list.reload;
   const [formTarget, setFormTarget] = useState(undefined); // undefined = closed, null = create, zone = edit
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [error, setError] = useState('');
-
-  async function refresh() {
-    const { data } = await api.get('/api/admin/zones');
-    setZones(data);
-  }
-
-  useEffect(() => {
-    refresh();
-  }, []);
 
   async function handleDelete() {
     setError('');
@@ -186,6 +181,7 @@ export function AdminZonesPage() {
             )}
           </TableBody>
         </Table>
+        <LoadMore hasMore={list.hasMore} loading={list.loading} onLoadMore={list.loadMore} />
       </Paper>
 
       {formTarget !== undefined && (

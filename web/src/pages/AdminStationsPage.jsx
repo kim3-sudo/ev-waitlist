@@ -20,29 +20,22 @@ import { StationsTable } from '../components/StationsTable.jsx';
 import { StationFormDialog } from '../components/StationFormDialog.jsx';
 import { ChargePointWizardDialog } from '../components/ChargePointWizardDialog.jsx';
 import { StationStatusDialog } from '../components/StationStatusDialog.jsx';
+import { usePagedList } from '../api/paged.js';
+import { LoadMore } from '../components/LoadMore.jsx';
 
 const POLL_MS = 8000;
 
 export function AdminStationsPage() {
   const { can } = useAuth();
   const canManage = can('stations.manage');
-  const [stations, setStations] = useState([]);
+  const list = usePagedList('/api/admin/stations', { pollMs: POLL_MS });
+  const stations = list.items;
+  const refresh = list.reload;
   const [wizardOpen, setWizardOpen] = useState(false);
   const [formTarget, setFormTarget] = useState(undefined); // undefined = closed, null = create, station = edit
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [search, setSearch] = useState('');
   const [statusTarget, setStatusTarget] = useState(null);
-
-  async function refresh() {
-    const { data } = await api.get('/api/admin/stations');
-    setStations(data);
-  }
-
-  useEffect(() => {
-    refresh();
-    const id = setInterval(refresh, POLL_MS);
-    return () => clearInterval(id);
-  }, []);
 
   async function handleDelete() {
     await api.delete(`/api/admin/stations/${deleteTarget.id}`);
@@ -97,6 +90,7 @@ export function AdminStationsPage() {
           onStatus={setStatusTarget}
           readOnly={!canManage}
         />
+        <LoadMore hasMore={list.hasMore} loading={list.loading} onLoadMore={list.loadMore} />
       </Paper>
 
       {statusTarget && <StationStatusDialog stationId={statusTarget.id} onClose={() => setStatusTarget(null)} />}

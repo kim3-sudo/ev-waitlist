@@ -1,3 +1,4 @@
+import { readPageRequest, afterPosition, pageOf } from '../pagination.js';
 import { Router } from 'express';
 import { prisma } from '../db.js';
 
@@ -19,8 +20,16 @@ const withRelations = {
 };
 
 adminZonesRouter.get('/', async (req, res) => {
-  const zones = await prisma.zone.findMany({ include: withRelations, orderBy: { name: 'asc' } });
-  res.json(zones.map(serialize));
+  const page = readPageRequest(req.query);
+  if (page.error) return res.status(400).json({ error: page.error });
+  const rows = await prisma.zone.findMany({
+    where: afterPosition(page.position, 'name', { direction: 'asc' }),
+    include: withRelations,
+    orderBy: [{ name: 'asc' }, { id: 'asc' }],
+    take: page.limit + 1,
+  });
+  const result = pageOf(rows, page.limit, (z) => ({ v: z.name, i: z.id }));
+  res.json({ data: result.data.map(serialize), nextCursor: result.nextCursor });
 });
 
 adminZonesRouter.post('/', async (req, res) => {

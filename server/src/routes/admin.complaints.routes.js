@@ -1,3 +1,4 @@
+import { readPageRequest, afterPosition, pageOf } from '../pagination.js';
 import { Router } from 'express';
 import { prisma } from '../db.js';
 
@@ -21,11 +22,16 @@ function serialize(complaint) {
 }
 
 adminComplaintsRouter.get('/', async (req, res) => {
-  const complaints = await prisma.lineCuttingComplaint.findMany({
+  const page = readPageRequest(req.query);
+  if (page.error) return res.status(400).json({ error: page.error });
+  const rows = await prisma.lineCuttingComplaint.findMany({
+    where: afterPosition(page.position, 'createdAt', { date: true }),
     include: { station: true, queueEntry: true },
-    orderBy: { createdAt: 'desc' },
+    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+    take: page.limit + 1,
   });
-  res.json(complaints.map(serialize));
+  const result = pageOf(rows, page.limit, (c) => ({ v: c.createdAt.toISOString(), i: c.id }));
+  res.json({ data: result.data.map(serialize), nextCursor: result.nextCursor });
 });
 
 adminComplaintsRouter.patch('/:id', async (req, res) => {

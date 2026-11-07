@@ -14,12 +14,14 @@ const SECTIONS = [
     items: [
       { label: 'Charge points', path: '/admin', end: true, permission: 'stations.view' },
       { label: 'Zones', path: '/admin/zones', permission: 'zones.view' },
+      { label: 'Alerts', path: '/admin/alerts', permission: 'alerts.manage' },
     ],
   },
   {
     title: 'Payments',
     items: [
       { label: 'Payment settings', path: '/admin/payments', permission: 'payments.view' },
+      { label: 'Price changes', path: '/admin/price-changes', permission: 'payments.view' },
       { label: 'Payment providers', path: '/admin/integrations', permission: 'integrations.manage' },
     ],
   },
@@ -28,6 +30,7 @@ const SECTIONS = [
     items: [
       { label: 'Users and roles', path: '/admin/users', permission: 'users.manage' },
       { label: 'Single sign-on', path: '/admin/sso', permission: 'sso.manage' },
+      { label: 'API access', path: '/admin/api-access', permission: 'serviceAccounts.view' },
     ],
   },
   {
@@ -51,6 +54,10 @@ const SECTIONS = [
   {
     title: 'Roaming',
     items: [{ label: 'Roaming and partners', path: '/admin/roaming', permission: 'roaming.manage' }],
+  },
+  {
+    title: 'Audit',
+    items: [{ label: 'Audit log', path: '/admin/audit', permission: 'audit.view' }],
   },
   {
     title: 'Privacy',

@@ -6,11 +6,12 @@ export const PERMISSIONS = [
   { key: 'stations.control', group: 'Charge points', label: 'Send commands to charge points (stop sessions, unlock, reset, holds)' },
   { key: 'zones.view', group: 'Zones', label: 'View zones' },
   { key: 'zones.manage', group: 'Zones', label: 'Create, edit, and delete zones' },
+  { key: 'alerts.manage', group: 'Charge points', label: 'Post and remove alerts for drivers (by charge point, location, or site)' },
   { key: 'complaints.view', group: 'Complaints', label: 'View line-cutting complaints' },
   { key: 'complaints.manage', group: 'Complaints', label: 'Resolve or dismiss complaints' },
   { key: 'reports.view', group: 'Reports', label: 'View reports' },
   { key: 'payments.view', group: 'Payments', label: 'View pricing and charges' },
-  { key: 'payments.manage', group: 'Payments', label: 'Change pricing and payment providers' },
+  { key: 'payments.manage', group: 'Payments', label: 'Change pricing, surge pricing and complimentary charging, and payment providers' },
   { key: 'branding.manage', group: 'Settings', label: 'Change branding, identifiers, and MFA policy' },
   { key: 'sso.manage', group: 'Settings', label: 'Configure single sign-on' },
   { key: 'system.manage', group: 'Settings', label: 'Change web addresses, CORS origin, and reservation window' },
@@ -20,9 +21,32 @@ export const PERMISSIONS = [
   { key: 'roaming.manage', group: 'Roaming', label: 'Turn roaming on or off and edit its warning' },
   // Also needs the installation administrator flag (see requireInstanceAdmin).
   { key: 'sites.manage', group: 'Sites', label: 'Create and manage sites and the operator (installation administrator only)' },
+  { key: 'serviceAccounts.view', group: 'API access', label: 'View service accounts, their permissions, and API key details' },
+  { key: 'serviceAccounts.manage', group: 'API access', label: 'Create, change, and revoke service accounts and their API keys' },
+  { key: 'audit.view', group: 'Audit', label: 'View the audit log and check its tamper-evidence chain' },
+  { key: 'audit.export', group: 'Audit', label: 'Download the audit log, and see the SIEM export status' },
+
+  // Held by service accounts (API keys), not by people. See routes/api.v1.
+  { key: 'api.stations.read', group: 'API (service accounts)', label: 'Read charge points and their status' },
+  { key: 'api.stations.write', group: 'API (service accounts)', label: 'Add, change, and remove charge points' },
+  { key: 'api.stations.control', group: 'API (service accounts)', label: 'Send commands to charge points (stop sessions, unlock, reset, holds)' },
+  { key: 'api.zones.read', group: 'API (service accounts)', label: 'Read zones' },
+  { key: 'api.zones.write', group: 'API (service accounts)', label: 'Create, change, and delete zones' },
+  { key: 'api.waitlist.read', group: 'API (service accounts)', label: 'Read waitlist entries' },
+  { key: 'api.waitlist.manage', group: 'API (service accounts)', label: 'Cancel waitlist entries' },
+  { key: 'api.charges.read', group: 'API (service accounts)', label: 'Read charges (no payer details)' },
+  { key: 'api.priceRules.read', group: 'API (service accounts)', label: 'Read surge pricing and complimentary charging rules' },
+  { key: 'api.priceRules.write', group: 'API (service accounts)', label: 'Create, change, and delete surge pricing and complimentary charging rules' },
+  { key: 'api.alerts.read', group: 'API (service accounts)', label: 'Read driver alerts' },
+  { key: 'api.alerts.write', group: 'API (service accounts)', label: 'Create, change, and delete driver alerts' },
+  { key: 'api.complaints.read', group: 'API (service accounts)', label: 'Read line-cutting complaints' },
+  { key: 'api.reports.read', group: 'API (service accounts)', label: 'Read reports and energy usage' },
 ];
 
 export const PERMISSION_KEYS = PERMISSIONS.map((p) => p.key);
+
+// The keys a service account may hold. Everything else is for people only.
+export const SERVICE_ACCOUNT_PERMISSION_KEYS = PERMISSION_KEYS.filter((k) => k.startsWith('api.'));
 
 // Built-in roles live in code so they can't be edited or deleted by mistake.
 export const BUILT_IN_ROLES = {
@@ -33,6 +57,19 @@ export const BUILT_IN_ROLES = {
   VIEWER: {
     description: 'Read-only access to charge points, zones, complaints, and reports.',
     permissions: ['stations.view', 'zones.view', 'complaints.view', 'reports.view'],
+  },
+  API_DEVELOPER: {
+    description: 'Builds and runs integrations: manages service accounts and their API keys, with full API permissions to grant. Read-only everywhere else.',
+    permissions: [
+      'stations.view',
+      'zones.view',
+      'complaints.view',
+      'reports.view',
+      'payments.view',
+      'serviceAccounts.view',
+      'serviceAccounts.manage',
+      ...SERVICE_ACCOUNT_PERMISSION_KEYS,
+    ],
   },
 };
 

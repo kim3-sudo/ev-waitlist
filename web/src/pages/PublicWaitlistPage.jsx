@@ -17,6 +17,7 @@ import { api } from '../api/client.js';
 import { WaitlistJoinDialog } from '../components/WaitlistJoinDialog.jsx';
 import { WaitlistStatusCard } from '../components/WaitlistStatusCard.jsx';
 import { ocppStatusLabel, ocppStatusDescription } from '../ocppStatus.js';
+import { SiteNotices, StationNotices } from '../components/DriverNotices.jsx';
 
 const STATIONS_POLL_MS = 8000;
 const MY_ENTRIES_KEY = 'myWaitlistEntries';
@@ -48,7 +49,10 @@ function saveMyEntries(entries) {
 export function PublicWaitlistPage() {
   const [stations, setStations] = useState([]);
   const [zones, setZones] = useState([]);
+  const [siteNotices, setSiteNotices] = useState({ alerts: [], pricing: [] });
   const [joinTarget, setJoinTarget] = useState(null);
+  // While payment is down in lockout mode, nobody can join.
+  const lockedOut = siteNotices.paymentOutage?.mode === 'LOCKOUT';
   const [myEntries, setMyEntries] = useState(loadMyEntries);
 
   useEffect(() => {
@@ -56,10 +60,15 @@ export function PublicWaitlistPage() {
 
     async function poll() {
       try {
-        const [stationsRes, zonesRes] = await Promise.all([api.get('/api/stations'), api.get('/api/zones')]);
+        const [stationsRes, zonesRes, noticesRes] = await Promise.all([
+          api.get('/api/stations'),
+          api.get('/api/zones'),
+          api.get('/api/notices'),
+        ]);
         if (!cancelled) {
           setStations(stationsRes.data);
           setZones(zonesRes.data);
+          setSiteNotices(noticesRes.data);
         }
       } catch {
         // list will simply not refresh this cycle
@@ -100,6 +109,8 @@ export function PublicWaitlistPage() {
         </Box>
       )}
 
+      <SiteNotices alerts={siteNotices.alerts} pricing={siteNotices.pricing} paymentOutage={siteNotices.paymentOutage} />
+
       <Typography variant="h5" fontWeight={600} gutterBottom>
         Charging stations
       </Typography>
@@ -116,7 +127,8 @@ export function PublicWaitlistPage() {
 
                 <Stack spacing={1} sx={{ mt: 2 }}>
                   {zone.stations.map((station) => (
-                    <Stack key={station.id} direction="row" spacing={1} useFlexGap sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
+                    <Box key={station.id}>
+                    <Stack direction="row" spacing={1} useFlexGap sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
                       <BoltIcon color={station.online ? 'primary' : 'disabled'} fontSize="small" />
                       <Typography variant="body2">{station.name}</Typography>
                       {station.connectors.map((c) => (
@@ -130,6 +142,8 @@ export function PublicWaitlistPage() {
                       ))}
                       {!station.online && <Chip size="small" label="Offline" variant="outlined" />}
                     </Stack>
+                    <StationNotices notices={station.notices} />
+                    </Box>
                   ))}
                   {zone.stations.length === 0 && (
                     <Typography variant="body2" color="text.secondary">
@@ -148,7 +162,7 @@ export function PublicWaitlistPage() {
                 <Button
                   variant="contained"
                   fullWidth
-                  disabled={zone.stations.length === 0}
+                  disabled={zone.stations.length === 0 || lockedOut}
                   onClick={() => setJoinTarget({ kind: 'zone', id: zone.id, name: zone.name })}
                 >
                   Join waitlist
@@ -190,6 +204,8 @@ export function PublicWaitlistPage() {
                   {!station.online && <Chip size="small" label="Offline" variant="outlined" />}
                 </Stack>
 
+                <StationNotices notices={station.notices} />
+
                 <Typography variant="body2" sx={{ mt: 2 }} color="text.secondary">
                   {station.waitingCount === 0
                     ? 'No one waiting'
@@ -200,6 +216,7 @@ export function PublicWaitlistPage() {
                 <Button
                   variant="contained"
                   fullWidth
+                  disabled={lockedOut}
                   onClick={() => setJoinTarget({ kind: 'station', id: station.id, name: station.name })}
                 >
                   Join waitlist

@@ -21,6 +21,12 @@ export function enterTenant(tenantId, fn) {
   return storage.run({ tenantId }, fn);
 }
 
+// Filter for rows a site can see: its own rows, plus network-wide rows (tenantId null).
+// Only the installation administrator can create network-wide rows.
+export function ownOrNetworkWhere(tenantId) {
+  return { OR: [{ tenantId }, { tenantId: null }] };
+}
+
 // The site the current request, socket, or job is working on. Outside any
 // scope this is the default site, which is correct for a single-site installation.
 export function currentTenantId() {

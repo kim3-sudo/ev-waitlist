@@ -7,11 +7,15 @@ import { renderMessage } from './messageTemplates.js';
 import { nextWaitingEntry } from './queueService.js';
 import { createHoldForEntry, releaseOpenHoldsFor } from './payments/holds.js';
 import { formatMoney } from './payments/chargeService.js';
+import { lockedOut } from './payments/providerOutage.js';
+import { currentTenantId } from '../tenancy/context.js';
 
 // Called whenever a connector's StatusNotification reports "Available".
 // If someone is waiting, holds the connector for them (via OCPP ReserveNow
 // where supported, otherwise a soft app-level hold) and notifies them.
 export async function onConnectorFreed(stationId, connectorId) {
+  // While the payment provider is down and the site is in lockout mode, nobody is offered a connector.
+  if (await lockedOut()) return;
   const connector = await prisma.connector.findUnique({
     where: { stationId_connectorId: { stationId, connectorId } },
   });
@@ -136,6 +140,17 @@ export async function tryDispatchStation(stationId) {
   });
   for (const connector of connectors) {
     await onConnectorFreed(stationId, connector.connectorId);
+  }
+}
+
+// Offers every free connector at this site to whoever is waiting. Used when a payment
+// outage ends, since connectors were held back during it.
+export async function redispatchAllStations() {
+  const connectors = await prisma.connector.findMany({
+    where: { status: 'Available', operative: true, connectorId: { gt: 0 }, station: { tenantId: currentTenantId() } },
+  });
+  for (const connector of connectors) {
+    await onConnectorFreed(connector.stationId, connector.connectorId);
   }
 }
 

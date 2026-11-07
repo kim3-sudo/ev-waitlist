@@ -9,6 +9,30 @@ import { getSettings } from '../services/settingsService.js';
 import { resolvePermissions } from '../services/roleService.js';
 import { requireAdmin, requireAdminAllowingPasswordChange } from './auth.middleware.js';
 import { tenantForAdminEmail, tenantFromAdminToken } from '../tenancy/middleware.js';
+import { recordAudit } from '../audit/record.js';
+import { currentTenantId } from '../tenancy/context.js';
+
+// Sign-in events. Recorded with the e-mail the sign-in was attempted with, so a failed
+// attempt on an unknown account can still be traced.
+function auditSignIn(req, res, { admin, email, outcome, reason }) {
+  recordAudit(
+    {
+      tenantId: admin?.tenantId ?? currentTenantId(),
+      actorType: admin ? 'ADMIN' : 'ANONYMOUS',
+      actorId: admin?.id ?? null,
+      actorLabel: admin?.email ?? email ?? null,
+      action: 'auth.login',
+      targetType: 'admin',
+      targetId: admin?.id ?? null,
+      targetLabel: email ?? admin?.email ?? null,
+      outcome,
+      reason,
+      ip: req.ip,
+      userAgent: req.headers['user-agent'],
+    },
+    { res },
+  );
+}
 
 export const authRouter = Router();
 
@@ -75,6 +99,7 @@ authRouter.post('/login', tenantForAdminEmail, async (req, res) => {
 
   const admin = await prisma.admin.findUnique({ where: { email } });
   if (!admin || !admin.passwordHash || !(await bcrypt.compare(password, admin.passwordHash))) {
+    auditSignIn(req, res, { admin: null, email, outcome: 'FAILED', reason: 'wrong e-mail or password' });
     return res.status(401).json({ error: 'Invalid credentials' });
   }
 
@@ -87,6 +112,7 @@ authRouter.post('/login', tenantForAdminEmail, async (req, res) => {
     return res.json({ mfaSetupRequired: true, preAuthToken: issuePreAuthToken(admin) });
   }
 
+  auditSignIn(req, res, { admin, email, outcome: 'SUCCESS', reason: 'signed in' });
   res.json(await sessionBody(admin));
 });
 
@@ -106,9 +132,11 @@ authRouter.post('/mfa/verify', tenantFromAdminToken, async (req, res) => {
 
   const admin = await prisma.admin.findUnique({ where: { id: payload.sub } });
   if (!admin?.mfaEnabled || !admin.mfaSecret || !authenticator.check(code, admin.mfaSecret)) {
+    auditSignIn(req, res, { admin, email: admin?.email, outcome: 'FAILED', reason: 'wrong authentication code' });
     return res.status(401).json({ error: 'Invalid code' });
   }
 
+  auditSignIn(req, res, { admin, email: admin.email, outcome: 'SUCCESS', reason: 'signed in with MFA' });
   res.json(await sessionBody(admin));
 });
 
@@ -175,6 +203,7 @@ authRouter.put('/password', requireAdminAllowingPasswordChange, async (req, res)
     return res.status(400).json({ error: 'This account signs in via SSO and has no local password' });
   }
   if (!(await bcrypt.compare(currentPassword, admin.passwordHash))) {
+    recordAudit({ tenantId: admin.tenantId, actorType: 'ADMIN', actorId: admin.id, actorLabel: admin.email, action: 'auth.password.change', targetType: 'admin', targetId: admin.id, targetLabel: admin.email, outcome: 'FAILED', reason: 'current password was wrong', ip: req.ip, userAgent: req.headers['user-agent'] }, { res });
     return res.status(401).json({ error: 'Current password is incorrect' });
   }
 
@@ -183,6 +212,7 @@ authRouter.put('/password', requireAdminAllowingPasswordChange, async (req, res)
     where: { id: admin.id },
     data: { passwordHash, mustChangePassword: false },
   });
+  recordAudit({ tenantId: admin.tenantId, actorType: 'ADMIN', actorId: admin.id, actorLabel: admin.email, action: 'auth.password.change', targetType: 'admin', targetId: admin.id, targetLabel: admin.email, outcome: 'SUCCESS', reason: 'password changed', ip: req.ip, userAgent: req.headers['user-agent'] }, { res });
   res.json({ ok: true });
 });
 

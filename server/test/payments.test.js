@@ -117,7 +117,7 @@ describe('charges and payment links', () => {
 
     await prisma.charge.update({ where: { id: charge.id }, data: { status: 'PAID' } });
     const list = await request(app).get('/api/admin/payments/charges').set('Authorization', `Bearer ${adminToken}`);
-    assert.equal(list.body[0].status, 'PAID');
+    assert.equal(list.body.data[0].status, 'PAID');
   });
 
   it('returns 404 for an unknown payment token', async () => {

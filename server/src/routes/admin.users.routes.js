@@ -1,3 +1,4 @@
+import { readPageRequest, afterPosition, pageOf } from '../pagination.js';
 import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import { prisma } from '../db.js';
@@ -39,8 +40,15 @@ async function canActOn(callerPermissions, targetRole) {
 }
 
 adminUsersRouter.get('/', async (req, res) => {
-  const admins = await prisma.admin.findMany({ orderBy: { createdAt: 'asc' } });
-  res.json(admins.map(toDTO));
+  const page = readPageRequest(req.query);
+  if (page.error) return res.status(400).json({ error: page.error });
+  const rows = await prisma.admin.findMany({
+    where: afterPosition(page.position, 'createdAt', { direction: 'asc', date: true }),
+    orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+    take: page.limit + 1,
+  });
+  const result = pageOf(rows, page.limit, (a) => ({ v: a.createdAt.toISOString(), i: a.id }));
+  res.json({ data: result.data.map(toDTO), nextCursor: result.nextCursor });
 });
 
 adminUsersRouter.post('/', async (req, res) => {

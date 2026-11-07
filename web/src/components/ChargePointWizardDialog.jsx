@@ -118,8 +118,8 @@ export function ChargePointWizard({
   useEffect(() => {
     // Zone listing needs zones.view; without it the zone choice is simply hidden.
     api
-      .get('/api/admin/zones')
-      .then(({ data }) => setZones(data))
+      .get('/api/admin/zones', { params: { limit: 200 } })
+      .then(({ data }) => setZones(data.data))
       .catch(() => setZones([]));
   }, []);
 

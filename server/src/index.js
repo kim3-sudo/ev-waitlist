@@ -5,8 +5,13 @@ import { createApp } from './app.js';
 import { createCentralSystem } from './ocpp/centralSystem.js';
 import { startReservationSweeper } from './services/reservationSweeper.js';
 import { startRetentionSweeper } from './services/retentionSweeper.js';
+import { startAuditSweeper } from './audit/retention.js';
+import { startAuditExporter } from './audit/exporter.js';
 import { startOcpiDispatcher } from './ocpi/outbox.js';
 import { startStationWatch } from './services/stationWatch.js';
+import { runWithTenant } from './tenancy/context.js';
+import { startProviderHealthChecks } from './services/payments/providerOutage.js';
+import { redispatchAllStations } from './services/dispatcher.js';
 
 // Settings come from the database, so load them before anything starts serving.
 await ensureDefaultTenant();
@@ -24,6 +29,10 @@ const centralSystem = createCentralSystem();
 httpServer.on('upgrade', centralSystem.handleUpgrade);
 
 startReservationSweeper();
+startProviderHealthChecks((tenantId) => runWithTenant(tenantId, () => redispatchAllStations()).catch((err) => console.error('Re-offering connectors failed:', err)));
 startRetentionSweeper();
+startAuditSweeper();
+// Exports audit events to a SIEM when AUDIT_SYSLOG_URL is set.
+startAuditExporter();
 startOcpiDispatcher();
 startStationWatch();

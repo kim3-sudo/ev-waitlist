@@ -155,8 +155,8 @@ describe('public /api/stations + waitlist', () => {
 
     const list = await authed(request(app).get('/api/admin/complaints'));
     assert.equal(list.status, 200);
-    assert.equal(list.body.length, 1);
-    assert.equal(list.body[0].note, 'Someone else plugged in');
+    assert.equal(list.body.data.length, 1);
+    assert.equal(list.body.data[0].note, 'Someone else plugged in');
 
     const resolve = await authed(request(app).patch(`/api/admin/complaints/${report.body.id}`)).send({ status: 'RESOLVED' });
     assert.equal(resolve.status, 200);

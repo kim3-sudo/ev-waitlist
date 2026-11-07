@@ -73,14 +73,14 @@ describe('sites', () => {
     await runWithTenant(garage.body.id, () => prisma.station.create({ data: { identity: 'G-1', name: 'Garage bay' } }));
 
     const viaHeader = await request(app).get('/api/admin/stations').set(bearer(instanceToken)).set('X-Site', 'garage');
-    assert.deepEqual(viaHeader.body.map((s) => s.name), ['Garage bay']);
+    assert.deepEqual(viaHeader.body.data.map((s) => s.name), ['Garage bay']);
 
     const unknown = await request(app).get('/api/admin/stations').set(bearer(instanceToken)).set('X-Site', 'nowhere');
     assert.equal(unknown.status, 404);
 
     // A site admin's header is ignored: they see their own site only.
     const siteAdminView = await request(app).get('/api/admin/stations').set(bearer(siteToken)).set('X-Site', 'garage');
-    assert.deepEqual(siteAdminView.body, []);
+    assert.deepEqual(siteAdminView.body.data, []);
   });
 
   it('deletes an empty site, and refuses the first site or a site with contents', async () => {

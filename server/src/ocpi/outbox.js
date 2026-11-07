@@ -1,6 +1,7 @@
 import { prisma, rawPrisma } from '../db.js';
 import { runWithTenant } from '../tenancy/context.js';
 import { getPaymentSettings } from '../services/payments/paymentSettingsService.js';
+import { priceAdjusterForSession } from '../services/payments/priceRuleService.js';
 import { partnerRequest, theirTokenOf } from './client.js';
 import { locationOf, tariffOf, sessionOf, cdrOf, evseStatusOf, evseUid, stationIsPublishable, TARIFF_ID } from './mappers.js';
 
@@ -91,7 +92,15 @@ async function buildRequest(row, endpoints) {
       if (!tx || tx.partnerId !== row.partnerId || !tx.stoppedAt) return { skip: 'Session is not finished for this partner' };
       const token = await prisma.ocpiToken.findFirst({ where: { partnerId: row.partnerId, uid: tx.idTag } });
       const settings = await getPaymentSettings();
-      return { method: 'POST', url: endpoints.cdrs, body: cdrOf(operator, tx.station, tx, token, settings) };
+      const adjustmentAt = await priceAdjusterForSession({
+        tenantId: tx.tenantId,
+        stationId: tx.stationId,
+        zoneId: tx.station.zoneId,
+        connectorId: tx.connectorId,
+        startedAt: tx.startedAt,
+        stoppedAt: tx.stoppedAt,
+      });
+      return { method: 'POST', url: endpoints.cdrs, body: cdrOf(operator, tx.station, tx, token, settings, adjustmentAt) };
     }
     default:
       return { skip: `Unknown message kind ${row.kind}` };

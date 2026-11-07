@@ -92,6 +92,12 @@ console.log('[setup] preparing database (npm run db:setup --workspace server)');
 const setupOutput = runStep('database setup', ['run', 'db:setup', '--workspace', 'server']);
 const firstRun = parseFirstRunCredentials(setupOutput);
 
+// The API reference is generated from openapi/openapi.yaml. Build it on first start.
+if (!existsSync(path.join(rootDir, 'server', 'public', 'api-docs', 'openapi.json'))) {
+  console.log('[setup] building the API reference (npm run docs:api:build)');
+  runStep('API reference build', ['run', 'docs:api:build']);
+}
+
 let simulatorReady = false;
 if (simulatorIdentity) {
   console.log(`[setup] preparing simulator station ${simulatorIdentity}`);

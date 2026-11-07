@@ -29,10 +29,10 @@ describe('/api/admin/users', () => {
   it('lists users without exposing password hashes', async () => {
     const res = await authed(request(app).get('/api/admin/users'));
     assert.equal(res.status, 200);
-    assert.equal(res.body.length, 1);
-    assert.equal(res.body[0].email, admin.email);
-    assert.equal(res.body[0].passwordHash, undefined);
-    assert.equal(res.body[0].hasPassword, true);
+    assert.equal(res.body.data.length, 1);
+    assert.equal(res.body.data[0].email, admin.email);
+    assert.equal(res.body.data[0].passwordHash, undefined);
+    assert.equal(res.body.data[0].hasPassword, true);
   });
 
   it('creates a user with a password', async () => {

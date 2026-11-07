@@ -258,6 +258,36 @@ CREATE TABLE "CustomRole" (
 );
 
 -- CreateTable
+CREATE TABLE "ServiceAccount" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "tenantId" TEXT NOT NULL,
+    "name" TEXT NOT NULL,
+    "description" TEXT,
+    "permissions" TEXT NOT NULL DEFAULT '[]',
+    "disabled" BOOLEAN NOT NULL DEFAULT false,
+    "createdBy" TEXT,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" DATETIME NOT NULL,
+    CONSTRAINT "ServiceAccount_tenantId_fkey" FOREIGN KEY ("tenantId") REFERENCES "Tenant" ("id") ON DELETE RESTRICT ON UPDATE CASCADE
+);
+
+-- CreateTable
+CREATE TABLE "ApiKey" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "tenantId" TEXT NOT NULL,
+    "serviceAccountId" TEXT NOT NULL,
+    "name" TEXT NOT NULL,
+    "prefix" TEXT NOT NULL,
+    "keyHash" TEXT NOT NULL,
+    "expiresAt" DATETIME,
+    "revokedAt" DATETIME,
+    "lastUsedAt" DATETIME,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "ApiKey_tenantId_fkey" FOREIGN KEY ("tenantId") REFERENCES "Tenant" ("id") ON DELETE RESTRICT ON UPDATE CASCADE,
+    CONSTRAINT "ApiKey_serviceAccountId_fkey" FOREIGN KEY ("serviceAccountId") REFERENCES "ServiceAccount" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+);
+
+-- CreateTable
 CREATE TABLE "PaymentSettings" (
     "tenantId" TEXT NOT NULL PRIMARY KEY,
     "pricingModel" TEXT NOT NULL DEFAULT 'TIME',
@@ -278,6 +308,7 @@ CREATE TABLE "PaymentSettings" (
     "meterMinSessionMinutes" INTEGER NOT NULL DEFAULT 2,
     "meterMaxJumpWh" INTEGER NOT NULL DEFAULT 50000,
     "rateCalculatorInputs" TEXT,
+    "providerOutageMode" TEXT NOT NULL DEFAULT 'LOCKOUT',
     "preauthCents" INTEGER,
     "updatedAt" DATETIME NOT NULL,
     CONSTRAINT "PaymentSettings_tenantId_fkey" FOREIGN KEY ("tenantId") REFERENCES "Tenant" ("id") ON DELETE RESTRICT ON UPDATE CASCADE
@@ -301,6 +332,7 @@ CREATE TABLE "Charge" (
     "energyWh" INTEGER,
     "energySource" TEXT,
     "energyNote" TEXT,
+    "pricingNote" TEXT,
     "status" TEXT NOT NULL DEFAULT 'PENDING',
     "provider" TEXT,
     "providerRef" TEXT,
@@ -330,6 +362,56 @@ CREATE TABLE "PaymentHold" (
     "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" DATETIME NOT NULL,
     CONSTRAINT "PaymentHold_tenantId_fkey" FOREIGN KEY ("tenantId") REFERENCES "Tenant" ("id") ON DELETE RESTRICT ON UPDATE CASCADE
+);
+
+-- CreateTable
+CREATE TABLE "Alert" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "tenantId" TEXT,
+    "scope" TEXT NOT NULL,
+    "stationId" TEXT,
+    "location" TEXT,
+    "severity" TEXT NOT NULL DEFAULT 'INFO',
+    "message" TEXT NOT NULL,
+    "startsAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "endsAt" DATETIME,
+    "createdByAdminId" TEXT,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" DATETIME NOT NULL,
+    CONSTRAINT "Alert_tenantId_fkey" FOREIGN KEY ("tenantId") REFERENCES "Tenant" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT "Alert_stationId_fkey" FOREIGN KEY ("stationId") REFERENCES "Station" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+);
+
+-- CreateTable
+CREATE TABLE "ProviderOutage" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "tenantId" TEXT NOT NULL,
+    "provider" TEXT NOT NULL,
+    "reason" TEXT NOT NULL,
+    "startedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "endedAt" DATETIME,
+    CONSTRAINT "ProviderOutage_tenantId_fkey" FOREIGN KEY ("tenantId") REFERENCES "Tenant" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+);
+
+-- CreateTable
+CREATE TABLE "PriceRule" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "tenantId" TEXT,
+    "kind" TEXT NOT NULL,
+    "scope" TEXT NOT NULL,
+    "zoneId" TEXT,
+    "stationId" TEXT,
+    "powerClass" TEXT,
+    "percent" INTEGER,
+    "label" TEXT NOT NULL DEFAULT '',
+    "startsAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "endsAt" DATETIME,
+    "createdByAdminId" TEXT,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" DATETIME NOT NULL,
+    CONSTRAINT "PriceRule_tenantId_fkey" FOREIGN KEY ("tenantId") REFERENCES "Tenant" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT "PriceRule_zoneId_fkey" FOREIGN KEY ("zoneId") REFERENCES "Zone" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT "PriceRule_stationId_fkey" FOREIGN KEY ("stationId") REFERENCES "Station" ("id") ON DELETE CASCADE ON UPDATE CASCADE
 );
 
 -- CreateTable
@@ -471,6 +553,18 @@ CREATE INDEX "StationEvent_tenantId_idx" ON "StationEvent"("tenantId");
 CREATE UNIQUE INDEX "CustomRole_tenantId_name_key" ON "CustomRole"("tenantId", "name");
 
 -- CreateIndex
+CREATE UNIQUE INDEX "ServiceAccount_tenantId_name_key" ON "ServiceAccount"("tenantId", "name");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "ApiKey_keyHash_key" ON "ApiKey"("keyHash");
+
+-- CreateIndex
+CREATE INDEX "ApiKey_tenantId_idx" ON "ApiKey"("tenantId");
+
+-- CreateIndex
+CREATE INDEX "ApiKey_serviceAccountId_idx" ON "ApiKey"("serviceAccountId");
+
+-- CreateIndex
 CREATE UNIQUE INDEX "Charge_token_key" ON "Charge"("token");
 
 -- CreateIndex
@@ -487,6 +581,24 @@ CREATE INDEX "PaymentHold_tenantId_idx" ON "PaymentHold"("tenantId");
 
 -- CreateIndex
 CREATE INDEX "PaymentHold_tenantId_idTag_idx" ON "PaymentHold"("tenantId", "idTag");
+
+-- CreateIndex
+CREATE INDEX "Alert_tenantId_idx" ON "Alert"("tenantId");
+
+-- CreateIndex
+CREATE INDEX "Alert_stationId_idx" ON "Alert"("stationId");
+
+-- CreateIndex
+CREATE INDEX "ProviderOutage_tenantId_endedAt_idx" ON "ProviderOutage"("tenantId", "endedAt");
+
+-- CreateIndex
+CREATE INDEX "PriceRule_tenantId_idx" ON "PriceRule"("tenantId");
+
+-- CreateIndex
+CREATE INDEX "PriceRule_stationId_idx" ON "PriceRule"("stationId");
+
+-- CreateIndex
+CREATE INDEX "PriceRule_zoneId_idx" ON "PriceRule"("zoneId");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "OcpiPartner_registrationTokenHash_key" ON "OcpiPartner"("registrationTokenHash");
@@ -515,3 +627,54 @@ CREATE INDEX "MessageTemplate_tenantId_idx" ON "MessageTemplate"("tenantId");
 -- CreateIndex
 CREATE UNIQUE INDEX "MessageTemplate_tenantId_key_key" ON "MessageTemplate"("tenantId", "key");
 
+
+-- CreateTable
+CREATE TABLE "AuditEvent" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "seq" INTEGER NOT NULL,
+    "at" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "tenantId" TEXT,
+    "actorType" TEXT NOT NULL,
+    "actorId" TEXT,
+    "actorLabel" TEXT,
+    "action" TEXT NOT NULL,
+    "targetType" TEXT,
+    "targetId" TEXT,
+    "targetLabel" TEXT,
+    "outcome" TEXT NOT NULL,
+    "reason" TEXT,
+    "changes" TEXT,
+    "ip" TEXT,
+    "userAgent" TEXT,
+    "requestId" TEXT,
+    "prevHash" TEXT NOT NULL,
+    "hash" TEXT NOT NULL,
+    "exportedAt" DATETIME,
+    CONSTRAINT "AuditEvent_tenantId_fkey" FOREIGN KEY ("tenantId") REFERENCES "Tenant" ("id") ON DELETE SET NULL ON UPDATE CASCADE
+);
+
+-- CreateTable
+CREATE TABLE "AuditSettings" (
+    "id" TEXT NOT NULL PRIMARY KEY DEFAULT 'singleton',
+    "retentionDays" INTEGER NOT NULL DEFAULT 30,
+    "ipLogging" TEXT NOT NULL DEFAULT 'TRUNCATED',
+    "updatedAt" DATETIME NOT NULL
+);
+
+-- CreateIndex
+CREATE UNIQUE INDEX "AuditEvent_seq_key" ON "AuditEvent"("seq");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "AuditEvent_hash_key" ON "AuditEvent"("hash");
+
+-- CreateIndex
+CREATE INDEX "AuditEvent_tenantId_seq_idx" ON "AuditEvent"("tenantId", "seq");
+
+-- CreateIndex
+CREATE INDEX "AuditEvent_action_idx" ON "AuditEvent"("action");
+
+-- CreateIndex
+CREATE INDEX "AuditEvent_at_idx" ON "AuditEvent"("at");
+
+-- CreateIndex
+CREATE INDEX "AuditEvent_exportedAt_idx" ON "AuditEvent"("exportedAt");

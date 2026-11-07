@@ -26,6 +26,10 @@ import { ChangePassphrasePage } from './pages/ChangePassphrasePage.jsx';
 import { SetupWizardPage } from './pages/SetupWizardPage.jsx';
 import { SetupGate } from './components/SetupGate.jsx';
 import { AdminPaymentsPage } from './pages/AdminPaymentsPage.jsx';
+import { AdminPriceRulesPage } from './pages/AdminPriceRulesPage.jsx';
+import { AdminAlertsPage } from './pages/AdminAlertsPage.jsx';
+import { AdminServiceAccountsPage } from './pages/AdminServiceAccountsPage.jsx';
+import { AdminAuditPage } from './pages/AdminAuditPage.jsx';
 import { AdminIntegrationsPage } from './pages/AdminIntegrationsPage.jsx';
 import { AdminSystemPage } from './pages/AdminSystemPage.jsx';
 import { PayPage } from './pages/PayPage.jsx';
@@ -126,6 +130,38 @@ export default function App() {
             element={
               <PermissionRoute permission="payments.view">
                 <AdminPaymentsPage />
+              </PermissionRoute>
+            }
+          />
+          <Route
+            path="price-changes"
+            element={
+              <PermissionRoute permission="payments.view">
+                <AdminPriceRulesPage />
+              </PermissionRoute>
+            }
+          />
+          <Route
+            path="alerts"
+            element={
+              <PermissionRoute permission="alerts.manage">
+                <AdminAlertsPage />
+              </PermissionRoute>
+            }
+          />
+          <Route
+            path="audit"
+            element={
+              <PermissionRoute permission="audit.view">
+                <AdminAuditPage />
+              </PermissionRoute>
+            }
+          />
+          <Route
+            path="api-access"
+            element={
+              <PermissionRoute permission="serviceAccounts.view">
+                <AdminServiceAccountsPage />
               </PermissionRoute>
             }
           />
