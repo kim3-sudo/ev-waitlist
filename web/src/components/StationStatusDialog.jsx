@@ -106,7 +106,9 @@ export function StationStatusDialog({ stationId, onClose }) {
     setMessage(null);
     try {
       const res = method === 'delete' ? await api.delete(base + path) : await api[method](base + path, body);
-      setMessage({ kind: 'success', text: res.data?.message ?? 'Done.' });
+      // A limit above a schedule's ceiling is accepted, but the schedule holds it down. Say so.
+      if (res.data?.warning) setMessage({ kind: 'warning', text: `${res.data.message ?? 'Done.'} ${res.data.warning}` });
+      else setMessage({ kind: 'success', text: res.data?.message ?? 'Done.' });
       return res.data;
     } catch (err) {
       const data = err.response?.data ?? {};
@@ -152,7 +154,7 @@ export function StationStatusDialog({ stationId, onClose }) {
       </DialogTitle>
       <DialogContent>
         <Stack spacing={2.5} sx={{ mt: 1 }}>
-          {message && <Alert severity={message.kind === 'error' ? 'error' : 'success'} onClose={() => setMessage(null)}>{message.text}</Alert>}
+          {message && <Alert severity={message.kind === 'error' ? 'error' : message.kind === 'warning' ? 'warning' : 'success'} onClose={() => setMessage(null)}>{message.text}</Alert>}
 
           <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: 'wrap' }}>
             <Chip size="small" label={status.online ? 'Online' : 'Offline'} color={status.online ? 'success' : 'default'} />

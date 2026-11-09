@@ -41,6 +41,9 @@ model Tenant {
   // Off until an admin turns it on (see services/loadBalance.js).
   loadBalancingEnabled            Boolean   @default(false)
   siteCapacityKw                  Float?
+  // Smart charging depth, as JSON: the time zone, the phase capacity, time-of-day schedules and
+  // dynamic events (see services/smartCharging.js). Null until an admin sets it.
+  smartChargingConfig             String? @db.Text
   // Retention, in days after a queue entry closes (personal data).
   queueRetentionDays     Int  @default(30)
   // Retention, in days, for payer details on charges. Null keeps them indefinitely.
@@ -316,6 +319,13 @@ model Connector {
   powerType       String?
   maxVoltage      Int?
   maxAmperage     Int?
+  // Wiring, for phase-aware balancing: 1 (single-phase) or 3 (three-phase), and for a single-phase
+  // connector the phase it is wired to (L1, L2 or L3). Blank means unknown (see smartCharging.js).
+  phaseCount      Int?
+  phase           String?
+  // The manual limit an admin set on this connector (the charge point holds it too). It is a
+  // ceiling for load balancing and schedules: the balance never goes above it. Null when none is set.
+  manualLimitAmps Int?
   // Free-text detail from the last StatusNotification (its info and vendorErrorCode fields).
   info            String?
   vendorErrorCode String?

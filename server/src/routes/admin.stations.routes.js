@@ -85,6 +85,12 @@ function connectorDetailsError(list, allowedIds) {
       if (v === '' || v == null) continue;
       if (!Number.isInteger(Number(v)) || Number(v) < 1 || Number(v) > 1000) return `${key} must be a whole number from 1 to 1000`;
     }
+    if (c.phaseCount !== '' && c.phaseCount != null && ![1, 3].includes(Number(c.phaseCount))) {
+      return 'phaseCount must be 1 (single-phase) or 3 (three-phase)';
+    }
+    if (Number(c.phaseCount) === 1 && c.phase && !['L1', 'L2', 'L3'].includes(c.phase)) {
+      return `phase "${c.phase}" must be L1, L2 or L3`;
+    }
   }
   return null;
 }
@@ -101,6 +107,9 @@ async function applyConnectorDetails(stationId, list) {
         powerType: blank(c.powerType) ? null : c.powerType,
         maxVoltage: blank(c.maxVoltage) ? null : Number(c.maxVoltage),
         maxAmperage: blank(c.maxAmperage) ? null : Number(c.maxAmperage),
+        // Wiring for phase-aware balancing. A three-phase connector has no single phase.
+        phaseCount: blank(c.phaseCount) ? null : Number(c.phaseCount),
+        phase: blank(c.phaseCount) || Number(c.phaseCount) === 3 || blank(c.phase) ? null : c.phase,
       },
     });
   }

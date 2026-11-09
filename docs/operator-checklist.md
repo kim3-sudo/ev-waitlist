@@ -1,59 +1,60 @@
 # Operator checklist
 
-Work through this before drivers use the site. Items marked **legal** need your own counsel. Plugyard does not provide legal advice.
+Complete these steps before drivers use the site. Items marked **legal** need review by your own counsel. Plugyard does not give legal advice.
 
-## 1. Legal review (legal)
+## 1. Legal (legal)
 
-- [ ] **Roaming terms and warning** (only if you will allow roaming drivers). Have counsel review the terms and the warning text. The required text is a draft. Turn roaming on only after the review, under **Roaming**, and tick the acknowledgement.
-- [ ] **Retention periods** (**Privacy**). Confirm the queue and payer-record periods match your data-protection and accounting obligations. The defaults are 30 days.
-- [ ] **Payer records.** Decide whether payer details on charges are kept after the financial period, or set "keep indefinitely" only if your own duties require it.
-- [ ] **Payment terms.** Confirm the terms of your payment providers with your own advisers.
-- [ ] **Privacy notice.** Tell drivers what you collect (name, contact, plate or permit number), why, and how long you keep it.
+- [ ] **Roaming terms and warning.** Have counsel review them. Turn roaming on under **Roaming** only after review, and tick the acknowledgement.
+- [ ] **Retention periods** under **Privacy**. The defaults are 30 days. Match them to your obligations.
+- [ ] **Payer records.** Decide how long to keep payer details on charges. Choose "keep indefinitely" only if the law requires it.
+- [ ] **Payment terms.** Confirm your payment providers' terms.
+- [ ] **Privacy notice.** Tell drivers what you collect (name, contact, plate or permit number), why, and for how long.
 
-## 2. Operator and identity
+## 2. Operator
 
-- [ ] **Operator name** (**Sites > Operator**): the company that runs the installation.
-- [ ] **Country code and party ID**: only if you roam. Your roaming scheme or partners assign the party ID. Do not invent one.
+- [ ] Enter your company name under **Sites > Operator**.
+- [ ] Enter a country code and party ID only if you roam. Get the party ID from your roaming scheme. Don't invent one.
 
 ## 3. Payments
 
-- [ ] Enter each site's own provider keys under **Integrations**. Keys are encrypted with `CONFIG_ENCRYPTION_KEY`.
-- [ ] Set the provider's webhook address (see [Webhook addresses](#webhook-addresses)) and paste its signing secret into the matching field.
-- [ ] Choose the active provider under **Payments**, and test a small charge.
-- [ ] **Legal review of pricing.** Time-based billing, time windows, and free charging each have their own rules in some places. Power-based billing may need a license. Check each with your own advisers before you use it.
-- [ ] **Card holds, if you use them.** Test a hold with a small amount, and confirm the hold is released when a session costs less or never starts. Tell drivers they must place the hold when they are called. Stripe and Braintree each release a hold that is not captured in time, so check the periods in their terms.
-- [ ] **Price check.** Use the rate calculator with your real bills, and check the price check's warning before you confirm a high rate.
+- [ ] Enter each site's provider keys under **Integrations**. The server encrypts them with `CONFIG_ENCRYPTION_KEY`.
+- [ ] Paste the webhook signing secret into the matching field, using the address in the table below.
+- [ ] Choose the active provider under **Payments**, and run a small test charge.
+- [ ] Have your advisers review pricing rules: time-based billing, time windows, free charging, and power-based billing (which may need a license).
+- [ ] If you take card holds, test a small hold. Confirm the hold releases when a session costs less or never starts. Tell drivers to place the hold when called. Check how long Stripe and Braintree keep uncaptured holds.
+- [ ] Test your prices with the rate calculator on real bills. Read the price check's warning before you confirm a high rate.
 
 ### Webhook addresses
+
+Replace `YOUR-PUBLIC-ADDRESS` with your public address.
 
 | Site | Stripe | Square |
 | --- | --- | --- |
 | Default (first) site | `https://YOUR-PUBLIC-ADDRESS/api/payments/stripe/webhook` | `https://YOUR-PUBLIC-ADDRESS/api/payments/square/webhook` |
-| A named site (slug `garage`) | `https://YOUR-PUBLIC-ADDRESS/api/t/garage/payments/stripe/webhook` | `https://YOUR-PUBLIC-ADDRESS/api/t/garage/payments/square/webhook` |
+| Named site (for example `garage`) | `https://YOUR-PUBLIC-ADDRESS/api/t/garage/payments/stripe/webhook` | `https://YOUR-PUBLIC-ADDRESS/api/t/garage/payments/square/webhook` |
 
-Each site's events are checked with that site's own secret, and a payment is only recorded for a charge in that site.
+Each site checks events with its own secret.
 
 ## 4. Security
 
-- [ ] **Public address** set under **System**, served over HTTPS.
-- [ ] **Secrets backed up**: `data/secrets.json` (or your own values in `.env`).
-- [ ] **Database backed up** on a schedule, together with the secrets.
-- [ ] **Multi-factor sign-in** turned on for administrators (**Users**, or the site-wide policy under **Branding**).
-- [ ] Each person has their own account. Give the least permission that does the job, using custom roles.
-- [ ] Single sign-on, if used, configured per site under **Single sign-on**.
+- [ ] Set the public address under **System**, served over HTTPS.
+- [ ] Back up `data/secrets.json` (or your own values in `.env`).
+- [ ] Back up the database on a schedule, together with the secrets.
+- [ ] Turn on multi-factor sign-in for administrators under **Users** or **Branding**.
+- [ ] Give each person their own account. Use custom roles to grant the least permission they need.
+- [ ] Configure single sign-on per site under **Single sign-on**, if you use it.
 
-## 5. Stations and operations
+## 5. Stations
 
-- [ ] Add charge points under **Charge points**, with the identity your charge points use in their address.
+- [ ] Add charge points under **Charge points**. Use the identity your charge points use in their address.
 - [ ] Group chargers that share a queue into a **Zone**.
 - [ ] Check the reservation window under **System**.
-- [ ] Use **Complaints** to review line-cutting reports, and resolve them.
+- [ ] Review line-cutting reports under **Complaints**, and resolve them.
 
 ## More than one site
 
-- One installation serves one operator. Sites under it share the operator record.
-- Only the installation administrator (the first administrator) creates sites, adds administrators to them, and deletes them. A site can be deleted only once it has no charge points, administrators or history.
-- Use **Sites** to add a site, then add its administrator. The administrator signs in as usual; the site is their home.
-- The installation administrator can work in another site by choosing it in the site selector at the top of the admin pages.
-- Each site has its own branding, payment keys, roaming switch, retention periods and single sign-on settings.
-- Drivers reach a site's waitlist at `/t/<site address>` on your public address.
+- Create sites under **Sites**. Only the installation administrator (the first administrator) can create, delete, or assign administrators to sites.
+- Delete a site only after you remove its charge points, administrators, and history.
+- Switch sites with the selector at the top of the admin pages.
+- Set branding, payment keys, roaming, retention, and single sign-on separately for each site.
+- Point drivers to `/t/<site address>` on your public address.

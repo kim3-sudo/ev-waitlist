@@ -2,7 +2,8 @@ import { Router } from 'express';
 import { rawPrisma } from '../db.js';
 import { currentTenantId } from '../tenancy/context.js';
 import { prisma } from '../db.js';
-import { rebalanceLater, rebalanceSite } from '../services/loadBalance.js';
+import { ceilingWarnings, rebalanceLater, rebalanceSite } from '../services/loadBalance.js';
+import { normalizeConfig, parseStoredConfig, SmartChargingConfigError } from '../services/smartCharging.js';
 
 // Load balancing settings: whether the site shares its supply, and how much it has. Mounted behind
 // stations.view (reads) and stations.manage (changes).
@@ -16,6 +17,9 @@ async function view() {
     siteCapacityKw: tenant.siteCapacityKw ?? null,
     chargePointsWithSmartCharging: smart,
     note: 'Charge points with smart charging on share the site supply while they charge. A manual limit set on the charge point page is overridden while load balancing is on.',
+    smartCharging: parseStoredConfig(tenant.smartChargingConfig),
+    // Manual limits that a schedule is holding down right now.
+    ceilingWarnings: await ceilingWarnings(currentTenantId()),
   };
 }
 
@@ -39,10 +43,30 @@ adminLoadBalancingRouter.put('/', async (req, res) => {
       data.siteCapacityKw = kw;
     }
   }
-  if (data.loadBalancingEnabled && !(data.siteCapacityKw ?? (await rawPrisma.tenant.findUnique({ where: { id: currentTenantId() } })).siteCapacityKw > 0)) {
-    return res.status(400).json({ error: 'Enter the site supply in kW before turning load balancing on' });
+  if (data.loadBalancingEnabled) {
+    const tenant = await rawPrisma.tenant.findUnique({ where: { id: currentTenantId() } });
+    const hasKw = (data.siteCapacityKw ?? tenant.siteCapacityKw) > 0;
+    const hasPhases = parseStoredConfig(tenant.smartChargingConfig).phaseCapacityA != null;
+    if (!hasKw && !hasPhases) {
+      return res.status(400).json({ error: 'Enter the site supply in kW, or set the supply per phase, before turning load balancing on' });
+    }
   }
   await rawPrisma.tenant.update({ where: { id: currentTenantId() }, data });
+  rebalanceLater(currentTenantId());
+  res.json(await view());
+});
+
+// Smart charging depth: the time zone, phase capacity, time-of-day schedules and dynamic events.
+// The whole configuration is replaced by each save, after it has been checked.
+adminLoadBalancingRouter.put('/config', async (req, res) => {
+  let config;
+  try {
+    config = normalizeConfig(req.body ?? {});
+  } catch (err) {
+    if (err instanceof SmartChargingConfigError) return res.status(400).json({ error: err.message });
+    throw err;
+  }
+  await rawPrisma.tenant.update({ where: { id: currentTenantId() }, data: { smartChargingConfig: JSON.stringify(config) } });
   rebalanceLater(currentTenantId());
   res.json(await view());
 });

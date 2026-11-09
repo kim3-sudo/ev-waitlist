@@ -7,6 +7,7 @@ import { nextReservationId } from '../services/reservationIdCounter.js';
 import { releaseReservation, onConnectorFreed } from '../services/dispatcher.js';
 import { DIAGNOSTICS_UPLOAD_HOURS, newUploadToken, publicBase, signFirmwareLink } from '../services/fileStore.js';
 import { sendLocalList } from '../services/localList.js';
+import { ceilingWarningFor, rebalanceLater } from '../services/loadBalance.js';
 
 // Commands an admin sends to a charge point. Mounted behind stations.control.
 // Every command the charge point answers is recorded in the station's history.
@@ -434,7 +435,21 @@ adminStationCommandsRouter.post('/:stationId/charging-limit', async (req, res) =
   }
   const where = connectorId === 0 ? 'the charge point' : `connector ${connectorId}`;
   await logCommand(station, actorOf(req), `Limited ${where} to ${limitAmps} A.`, { connectorId: connectorId || null });
-  res.status(202).json({ message: `${where[0].toUpperCase()}${where.slice(1)} limited to ${limitAmps} A.` });
+  // A connector's manual limit is recorded, so load balancing and schedules keep to it.
+  let warning = null;
+  if (connectorId > 0) {
+    await prisma.connector.update({
+      where: { stationId_connectorId: { stationId: station.id, connectorId } },
+      data: { manualLimitAmps: limitAmps },
+    });
+    // The balance writes the same warning to the station's history when it applies the ceiling.
+    warning = await ceilingWarningFor(station.tenantId, station.id, limitAmps);
+    rebalanceLater(station.tenantId);
+  }
+  res.status(202).json({
+    message: `${where[0].toUpperCase()}${where.slice(1)} limited to ${limitAmps} A.`,
+    ...(warning ? { warning } : {}),
+  });
 });
 
 adminStationCommandsRouter.delete('/:stationId/charging-limit', async (req, res) => {
@@ -450,6 +465,10 @@ adminStationCommandsRouter.delete('/:stationId/charging-limit', async (req, res)
   });
   if (!outcome.ok) return failure(res, outcome);
   await logCommand(station, actorOf(req), `Removed the power limit on ${connectorId === 0 ? 'the charge point' : `connector ${connectorId}`}.`, { connectorId: connectorId || null });
+  if (connectorId > 0) {
+    await prisma.connector.updateMany({ where: { stationId: station.id, connectorId }, data: { manualLimitAmps: null } });
+    rebalanceLater(station.tenantId);
+  }
   res.json({ message: 'Power limit removed.' });
 });
 

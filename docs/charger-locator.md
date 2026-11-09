@@ -1,77 +1,53 @@
 # Charger locator
 
-The charger locator shows drivers where their charge points are: as a list, grouped by
-site (and zone), or as points on an OpenStreetMap map. The map is the default view. DC rapid
-charge points and Level 1/2 (AC) charge points have different colours on the map. Drivers can
-filter by one or more plug types (a charge point matches when it has any of them), minimum
-power, availability and text, sort by distance, and open a charge point to see live connector
-status, price, opening hours and directions.
+The locator shows drivers your charge points as a map (the default), a list, or a by-site view. It's the home page: `/` for the default site and `/t/<slug>` for a named site. The old `/locator` addresses still work.
 
-The locator is the home page: `/` for the default site and `/t/<slug>` for a named site. It is
-also where drivers join a waitlist or start charging. The detail panel's button reads "Start
-charging" when nobody is waiting and a charger is free, and "Join waitlist" otherwise. The old
-`/locator` and `/t/<slug>/locator` addresses still open the same page.
+Drivers can filter by plug type, minimum power, availability, and text. They can sort by distance and open a charge point to see live status, price, hours, and directions. The button reads "Start charging" when a charger is free and nobody waits, and "Join waitlist" otherwise.
 
-## What a charge point needs to appear
+## Make a charge point appear
 
-A charge point is shown only when it is publishable, the same rule the roaming feed uses:
+Add these details, or the locator hides the charge point:
 
-- It has a latitude and longitude.
-- Every connector has its plug type, format, power type, voltage and amperage.
+- A latitude and longitude.
+- For every connector: plug type, format, power type, voltage, and amperage.
 
-A site (tenant) is shown on the by-site view when at least one of its charge points is
-publishable. Its own address and pin are set under **Admin > Site location**.
+A site appears in the by-site view when at least one charge point is listed. Set the site's address and pin under **Admin > Site location**.
 
-## Where the details come from
+## Set details
 
-- **Address, city, postal code, country, opening hours, nearby amenities.** A charge point
-  can set its own. A blank value falls back to the site's.
-- **Address lookup.** The admin pin picker searches with Nominatim, through the server
-  (`GET /api/admin/locator/geocode`), so the browser never calls it directly.
-- **Power.** Worked out from each connector's voltage and amperage (three-phase uses the
-  square root of three).
-- **Price.** The site's payment settings, as a driver sees them.
+- **Address, hours, and nearby amenities.** Set them per charge point, or leave them blank to use the site's.
+- **Address lookup.** The admin pin picker searches through the server, so the browser never calls the geocoder.
+- **Power.** The server calculates it from voltage and amperage. Three-phase uses the square root of three.
+- **Price.** The locator shows the price from your payment settings.
+
+Set the site's nearby amenities, parking options, and access control on the Site location page. Set a charge point's parking options on its own form.
 
 ## Routes
 
 | Route | Who | Purpose |
 |---|---|---|
-| `GET /api/locator/stations` | public | List and map points, across all sites. Filters: `q`, `standard` (plugs), `type` (`AC`, `DC`), `minChargers` (charge points at the site, at least), `amenities` and `parking` (keys, all must match), `minKw`, `available=1`, `bbox=w,s,e,n`, `lat`, `lng`, `radiusKm`, `sort=distance\|power\|name`. Lists are comma-separated; plugs and types match any one, amenities and parking must all match. Each charge point carries `chargerType` (`DC` or `AC`), `waitingCount`, `tips`, and its `zone` with `waitingCount` and `available` |
-| `GET /api/locator/stations/:id` | public | One charge point, with pricing and notices |
-| `GET /api/locator/sites` | public | Sites, grouped by zone, with the same filters |
+| `GET /api/locator/stations` | Public | List or map charge points across all sites. See filters below. |
+| `GET /api/locator/stations/:id` | Public | One charge point, with pricing and notices |
+| `GET /api/locator/sites` | Public | Sites, grouped by zone, with the same filters |
+| `GET`/`PUT /api/admin/locator/site` | Admin (stations) | Read or set the site's address and pin |
+| `GET /api/admin/locator/geocode?q=` | Admin (stations) | Look up an address |
+| `GET /api/t/<slug>/locator/...` | Public | Same as above, for one site |
 
-Both list endpoints return one page at a time: `offset` and `limit` (25 charge points by default, 10 sites by default, at most 500). The reply gives `count` (charge points that match), `total` (charge points, or sites for `/sites`), `hasMore` and the page's `offset` and `limit`. The list and by-site views load the next page as the driver scrolls. The map asks for the charge points in view with `bbox` and `limit=500`, and says how many are left off when there are more. `q` also matches site names on the by-site view.
-| `GET /api/t/<slug>/locator/...` | public | The same, for one site |
-| `GET`/`PUT /api/admin/locator/site` | admin, stations view/manage | The site's own address and pin |
-| `GET /api/admin/locator/geocode?q=` | admin, stations view | Address lookup |
+**Filters** on the station and site lists: `q`, `standard` (plugs), `type` (`AC` or `DC`), `minChargers`, `amenities` and `parking` (all must match), `minKw`, `available=1`, `bbox=w,s,e,n`, `lat`, `lng`, `radiusKm`, and `sort=distance|power|name`. Separate multiple values with commas. Plugs and types match any one value.
 
-## Configuration
+**Paging:** send `offset` and `limit`. Charge points default to 25 per page, sites to 10, with a maximum of 500. The reply includes `count`, `total`, and `hasMore`. The map requests `bbox` with `limit=500`.
 
-- `VITE_TILE_URL`: the map tile server, when the default OpenStreetMap tiles are not used.
-  Its default is `https://tile.openstreetmap.org/{z}/{x}/{y}.png`.
-- `NOMINATIM_URL`: the geocoder for address lookups. Default
-  `https://nominatim.openstreetmap.org/search`. Lookups are limited to one per second.
+## Configure
 
-## Tile and geocoder policy
+- `VITE_TILE_URL`: your map tile server. Default: `https://tile.openstreetmap.org/{z}/{x}/{y}.png`.
+- `NOMINATIM_URL`: your geocoder. Default: `https://nominatim.openstreetmap.org/search`. Lookups run at most once per second.
 
-The public OpenStreetMap tile servers and Nominatim are shared services with usage
-policies. They are fine for light use. Before a busy public launch, use a tile provider
-or self-host tiles and point `VITE_TILE_URL` at it. The map always shows the
-"© OpenStreetMap contributors" attribution, and that must stay visible.
+Before a busy public launch, use a commercial tile provider or host your own tiles, and set `VITE_TILE_URL`. Keep the "© OpenStreetMap contributors" attribution visible.
 
-## Demo data
+## Load demo data
 
-`npm run db:seed-simulator` gives the simulator station a position (London by default,
-or `SIM_LATITUDE` and `SIM_LONGITUDE`) and complete connector details, so it appears on
-the map. Running it again only fills in blanks.
+Run `npm run db:seed-simulator` to place the simulator charge point on the map. It uses London by default, or set `SIM_LATITUDE` and `SIM_LONGITUDE`. Running it again fills only blank fields.
 
-## Site details and parking
+## Keys
 
-Each site has an admin-ticked list of amenities nearby (dining, restrooms, shopping, lodging,
-public parks, grocery, Wi-Fi, camping, free charging), a list of parking options (accessible,
-covered by a canopy, in a garage, illuminated, pull-through for trailers, trailer-friendly), and
-an access-controlled flag for sites that need permission to enter, such as a workplace lot. The
-admin sets these on the Site location page. A charge point has its own parking list, set on its
-form. A driver sees the site's details in the charge point panel. Parking matches a filter when
-the charge point or its site offers it. The keys are in `server/src/services/siteFeatures.js`,
-and the web app keeps the same keys in `web/src/components/locator/locatorFormat.js`.
+Amenity, parking, and access keys live in `server/src/services/siteFeatures.js`. Keep `web/src/components/locator/locatorFormat.js` in sync with them.

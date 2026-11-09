@@ -1,56 +1,42 @@
 # Driver accounts
 
-A driver can keep their details and vehicles on an account. The account is an ordinary account
-in the admin user table, with the driver role, so it uses the same sign-in, tokens and permission
-checks as admins. An admin can also be a driver: admin accounts hold the driver permission
-(`driver.account`) as well, so they can manage their own vehicles.
+Drivers can save their details and vehicles on an account. Driver accounts use the same sign-in and permission checks as admin accounts. An admin account can also manage its own vehicles.
 
-## Signing in
+## Sign in
 
-There is one sign-in page, at `/login` (or `/t/<slug>/login` for a named site). Its two ways in:
+Drivers sign in at `/login` (or `/t/<slug>/login` for a named site).
 
-- **Password.** Works for every account. A driver can set a password on their account page. Admin
-  accounts also get the two-factor step after the password, when it is switched on.
-- **One-time code.** The driver enters their e-mail address and gets a six-digit code, valid for
-  10 minutes, which can be used once. Five wrong guesses use up a code. At most five codes can be
-  asked for per address per hour. A new e-mail address gets a driver account on the first correct
-  code. Codes need e-mail to be set up for the site; otherwise the driver is told to use a password.
-  Accounts with admin permissions are not signed in by code, so the two-factor step cannot be skipped;
-  they are asked for their password.
+- **With a password.** Set one on your account page. Admins also enter a two-factor code if it's on.
+- **With a one-time code.** Enter your email address and get a six-digit code. The code expires in 10 minutes and works once. Five wrong guesses use up a code, and you can request five codes per address per hour. A new email address gets a driver account on its first correct code. Requires email set up for the site.
 
-After signing in, admins go to the admin pages and driver-only accounts go to their account page.
-The old `/sign-in` address redirects to `/login`.
+Admin accounts always sign in with a password, so they can't skip the two-factor step.
 
-A driver-only account cannot use any admin route; the server refuses it with `DRIVER_ACCOUNT`.
+After you sign in, admins go to the admin pages and drivers go to their account page. The old `/sign-in` address redirects to `/login`.
 
-## Site settings
+Driver-only accounts can't reach admin routes. The server returns `DRIVER_ACCOUNT`.
 
-- **Driver accounts** (Waitlist settings): *Optional* lets guests join and start charging; a signed-in
-  driver has their details filled in. *Required* makes a driver sign in before they join the
-  waitlist or start charging.
-- **Contact details** (Waitlist settings): when on, a waitlist join needs an e-mail address or mobile
-  number. When off, a driver may join without one, and is not told when a charger is free.
+## Set site rules
 
-A signed-in driver's name and e-mail address fill in the join form. Their first vehicle's licence
-plate fills in too, if it has one.
+Under **Waitlist settings**:
 
-## Vehicles
+- **Driver accounts.** Choose *Optional* to let guests join and charge. Signed-in drivers get their details filled in. Choose *Required* to make drivers sign in before they join or charge.
+- **Contact details.** Turn this on to require an email address or mobile number to join. Turn it off to let drivers join without one. Drivers who join without contact details don't get notified when a charger frees up.
 
-A driver adds each vehicle with the plugs it can charge with, including with an adapter (for
-example an IONIQ 5 with J1772, NACS and CCS1). On the charger finder, "Use my vehicles' plugs" sets
-the plug filter to every plug the driver's vehicles can use, so charge points that work with one
-of them are shown.
+A signed-in driver's name, email, and first vehicle's plate fill in the join form.
+
+## Add vehicles
+
+Add each vehicle with every plug it can use, including adapters. For example, an IONIQ 5 uses J1772, NACS, and CCS1. On the charger finder, select **Use my vehicles' plugs** to filter for every plug your vehicles accept.
 
 ## Routes
 
 | Route | Who | Purpose |
 |---|---|---|
-| `POST /api/auth/login` | anyone | Signs in with a password (admins and drivers alike) |
-| `POST /api/auth/code/request` | anyone | Sends a sign-in code by e-mail |
-| `POST /api/auth/code/verify` | anyone | Signs in with the code (creates the driver account if new) |
-| `GET`/`PUT /api/driver/me` | driver | Name and mobile number |
-| `PUT /api/driver/password` | driver | Sets or changes the password |
-| `GET`/`POST /api/driver/vehicles`, `PUT`/`DELETE /api/driver/vehicles/:id` | driver | Own vehicles |
+| `POST /api/auth/login` | Anyone | Sign in with a password |
+| `POST /api/auth/code/request` | Anyone | Email a sign-in code |
+| `POST /api/auth/code/verify` | Anyone | Sign in with a code (creates a new driver account) |
+| `GET`/`PUT /api/driver/me` | Driver | Read or update name and mobile number |
+| `PUT /api/driver/password` | Driver | Set or change password |
+| `GET`/`POST /api/driver/vehicles`, `PUT`/`DELETE /api/driver/vehicles/:id` | Driver | Manage vehicles |
 
-The code routes are also mounted under `/api/t/<slug>/auth/code`, and the driver routes under `/api/t/<slug>/driver`, for a named site. Driver accounts belong to one
-site. An e-mail address can have one account across the installation, as admin accounts do.
+For a named site, use `/api/t/<slug>/auth/code` and `/api/t/<slug>/driver`. Each driver account belongs to one site. An email address can have one account across the installation.

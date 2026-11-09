@@ -85,6 +85,8 @@ export function StationFormDialog({ station, onClose, onSaved }) {
         powerType: c.powerType ?? '',
         maxVoltage: c.maxVoltage ?? '',
         maxAmperage: c.maxAmperage ?? '',
+        phaseCount: c.phaseCount ?? '',
+        phase: c.phase ?? '',
       };
     }
     return out;

@@ -1,99 +1,73 @@
-# Plan: cryptographic signing of firmware before updates
+# Plan: sign firmware before updates
 
-Status: planned, not built. This plan covers how firmware is checked before it reaches a charge point.
-Today, firmware is stored with a SHA-256 checksum (see [charge point features](charge-point-features.md)).
-A checksum shows the file was not damaged, but not who made it. Anyone who can upload a file can
-also change the checksum to match.
+**Status: planned, not built.** Today, the server stores a SHA-256 checksum for each firmware file. A checksum confirms a file wasn't damaged, but it doesn't prove who made it. Anyone who can upload a file can also update its checksum.
 
-## What we are protecting against
+This plan protects against:
 
-1. **A malicious or mistaken upload** by someone with the firmware permission.
-2. **A file changed on the server's disk** after upload.
-3. **A file changed in transit**. HTTPS covers the link, but not where the file came from.
-4. **A stolen signing key**. Limiting the damage matters as much as preventing theft.
+1. A malicious or mistaken upload.
+2. A file changed on the server's disk after upload.
+3. A file changed in transit, after HTTPS.
+4. A stolen signing key. Limit the damage as well as preventing theft.
 
-## Design
+## Who signs
 
-### 1. Who signs
+- **Preferred:** the charge point vendor signs. The server stores and forwards the file and never holds a signing key.
+- **Fallback:** you sign with an offline key on a release machine, for vendors that don't sign. Register the public certificate with the server.
 
-Preferred: the **charge point vendor signs the firmware**, and the server only stores and forwards it.
-Then the server does not hold the signing key, and a compromised server cannot make new valid firmware.
+## Where checks happen
 
-Fallback: the **operator signs with an offline key**, for vendors that do not sign. The operator's
-signing key is kept off the server, on a machine that signs releases. The public certificate is
-registered with the server.
+Run both checks.
 
-### 2. Where the check happens
+- **Upload (server).** Upload the firmware with a detached signature and signing certificate. The server verifies the SHA-256 digest and the signature against the site's trust anchors. It stores the result as `signatureStatus`: `UNSIGNED`, `VERIFIED`, or `REJECTED`. Before each send, the server rechecks the digest.
+- **Charge point (device).** Send the signature and certificate with the update (OCPP 2.0.1 `UpdateFirmware` carries `signingCertificate` and `signature`). The charge point verifies them before installing. If the check fails, it reports `InvalidSignature` in `FirmwareStatusNotification`, and the server logs it.
 
-Two checks, both needed:
+The device check matters most. It catches a server compromised after upload.
 
-- **At upload (server).** The admin uploads the firmware with a detached signature and the signing
-  certificate. The server checks the SHA-256 digest, then verifies the signature with the
-  certificate against the site's trust anchors (the CA certificates the site accepts). The result is
-  stored on the package as `signatureStatus`: `UNSIGNED`, `VERIFIED`, or `REJECTED`. The server
-  rechecks the stored file's digest before each send, so a file changed on disk is caught.
-- **On the charge point (device).** The server sends the signature and certificate with the update
-  (OCPP 2.0.1 `UpdateFirmware` carries `signingCertificate` and `signature`). The charge point
-  verifies before installing. If it refuses, it reports `InvalidSignature` in
-  `FirmwareStatusNotification`, which the server records as an event.
+## Policy
 
-The device check is the one that matters most, because it protects against a server that has been
-compromised after the upload check.
+Add a per-site setting: **require signed firmware**.
 
-### 3. Policy
+- **Off (default):** unsigned firmware can be sent, with a warning.
+- **On:** the server sends only `VERIFIED` packages and explains refusals on the charge point page.
 
-A per-site setting: **require signed firmware**.
+## Keys and trust
 
-- Off (default, to keep existing sites working): unsigned packages can be sent, and the admin sees a warning.
-- On: only `VERIFIED` packages can be sent. The server refuses to send anything else, and the
-  charge point page says why.
+- Store a list of CA certificates per site as trust anchors. Store no private keys.
+- Add a new anchor before you remove the old one. Packages signed under a removed anchor become `REJECTED`.
+- The first release skips revocation (CRL and OCSP). To block a compromised vendor certificate, remove it from the anchors. That stops new uploads but not firmware already installed.
+- Use ECDSA P-256 with SHA-256, or Ed25519. Node's built-in `crypto` supports both.
 
-### 4. Keys and trust
+## Data changes
 
-- Trust anchors: a list of CA certificates per site, uploaded by the admin. No private keys are stored.
-- Rotation: a new trust anchor can be added before the old one is removed. Packages signed under a
-  removed anchor show `REJECTED` and cannot be sent under the strict policy.
-- Revocation: not checked in the first release (no CRL or OCSP). A compromised vendor certificate
-  must be removed from the trust anchors, which blocks new uploads. Already-installed firmware is not
-  affected. This limit is stated to the operator.
-- Algorithms: ECDSA P-256 with SHA-256, or Ed25519. Both are available in Node's built-in `crypto`
-  module, so no new dependency is needed.
+- `FirmwarePackage`: add `signatureAlgorithm`, `signature`, `signingCertificate` (PEM), `signatureStatus`, `verifiedAt`, and `verifiedError`.
+- Site settings: add `requireSignedFirmware` (boolean) and `trustAnchors` (PEM list).
 
-### 5. Data changes
+## Admin interface
 
-`FirmwarePackage`: `signatureAlgorithm`, `signature`, `signingCertificate` (PEM),
-`signatureStatus`, `verifiedAt`, `verifiedError`.
+- Upload form: optional signature and certificate files, with the result shown right away.
+- Package list: a badge for each status, and the signer's subject name.
+- Update button: disabled for unverified packages under the strict policy, with the reason shown.
 
-`BillingSettings`-style site settings: `requireSignedFirmware` (boolean), `trustAnchors` (PEM list).
-
-### 6. Admin interface
-
-- Upload form: optional signature file and certificate file, with the result shown at once.
-- Package list: a badge for `UNSIGNED`, `VERIFIED`, or `REJECTED`, and the signer's subject name.
-- Update action: disabled for non-verified packages when the strict policy is on, with the reason.
-
-### 7. Testing
+## Tests
 
 - Valid signature from a trusted CA: `VERIFIED`.
-- One changed byte in the file: `REJECTED`, digest mismatch.
-- Signature from an untrusted CA: `REJECTED`.
+- One changed byte: `REJECTED` (digest mismatch).
+- Untrusted CA: `REJECTED`.
 - Expired certificate: `REJECTED`.
-- Strict policy with an unsigned package: the send is refused and nothing reaches the charge point.
-- The 2.0.1 `UpdateFirmware` message with signature fields passes the official schema check, as the
-  OCPP tests do now.
-- A charge point reporting `InvalidSignature` is recorded as an event.
+- Strict policy, unsigned package: send refused, and nothing reaches the charge point.
+- `UpdateFirmware` with signature fields passes the OCPP 2.0.1 schema check.
+- `InvalidSignature` from a charge point is logged as an event.
 
-### 8. Rollout
+## Rollout
 
-1. Verify at upload and record the status. No change to sending.
-2. Add the strict policy, and send signature fields on OCPP 2.0.1 charge points.
-3. Confirm device-side checks with one vendor, using a deliberately altered test image.
+1. Verify at upload, and record the status. Don't change sending.
+2. Add the strict policy, and send signature fields to OCPP 2.0.1 charge points.
+3. Confirm device checks with one vendor, using a deliberately altered test image.
 4. Add revocation checks if operators need them.
 
-## Open questions for the team
+## Open questions
 
-1. Do the charge point vendors we use sign their firmware, and can they supply the certificate chain?
-2. OCPP 1.6 has no standard signature fields. Do we accept a vendor-specific mechanism for those
-   chargers, or leave them on the checksum only?
-3. Should the strict policy be the default for new sites?
-4. Where are the offline signing keys kept, and who can sign a release?
+1. Do your vendors sign firmware, and can they supply the certificate chain?
+2. OCPP 1.6 has no standard signature fields. Accept a vendor-specific method, or keep checksums only for those chargers?
+3. Should new sites default to the strict policy?
+4. Where are offline signing keys kept, and who can sign a release?

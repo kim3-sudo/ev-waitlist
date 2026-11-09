@@ -1,21 +1,23 @@
-# Upgrading an existing installation
+# Upgrade an existing installation
 
-This version adds sites, an operator, retention settings, a roaming switch and per-site settings. An existing single-site installation keeps working, and its data moves into one site called `default`.
+This version adds sites, an operator, retention settings, a roaming switch, and per-site settings. Your single site moves into a site named `default`, and it keeps working.
 
-## Before you start
+## Back up first
 
 1. **Back up the database.**
-   - SQLite: stop the server and copy the database file. An older install keeps it at `server/prisma/dev.db`; newer installs use `data/dev.db` in the project root.
+   - SQLite: stop the server and copy the file. Older installs use `server/prisma/dev.db`. Newer installs use `data/dev.db`.
    - PostgreSQL or MariaDB: take a dump with your usual tool.
-2. **Back up your secrets.** Copy `server/data/secrets.json` if it exists, and your `.env`.
+2. **Back up secrets.** Copy `server/data/secrets.json` (if it exists) and your `.env`.
+3. **Check `JWT_SECRET`.** Remove it from `.env` if it's `dev-secret-change-me` or `change-me-to-a-long-random-string`. The server refuses to start with those values. It generates a new secret instead.
 
-**Moving local data.** Databases and generated secrets now live in `data/` in the project root, which is not committed. An older install that still has `server/data/secrets.json` keeps using that file, and the server logs a notice until you move it. To finish the move, stop the server and:
+## Move local data (optional)
 
-- move `server/data/secrets.json` to `data/secrets.json`, keeping its permissions at 0600;
-- either move your SQLite database to `data/dev.db` and set `DATABASE_URL="file:../../data/dev.db"` in `.env`, or leave `DATABASE_URL` as it is.
+Databases and secrets now live in `data/`. An older install that uses `server/data/secrets.json` keeps working, and the server logs a notice. To finish the move, stop the server, then:
 
-Do not generate new secrets during the move. A new encryption key makes saved payment keys unreadable.
-3. **Check `JWT_SECRET` in `.env`.** If it is set to `dev-secret-change-me` or `change-me-to-a-long-random-string`, the server now refuses to start. Remove the line (a new secret is generated) or set a real value.
+- Move `server/data/secrets.json` to `data/secrets.json`. Keep permissions at 0600.
+- Either move your SQLite file to `data/dev.db` and set `DATABASE_URL="file:../../data/dev.db"` in `.env`, or leave `DATABASE_URL` unchanged.
+
+Don't generate new secrets during the move. A new encryption key makes saved payment keys unreadable.
 
 ## Upgrade
 
@@ -25,26 +27,20 @@ npm install
 npm start
 ```
 
-The server applies the new database migrations on start. They:
+The server applies migrations on start. It creates the operator and the `default` site, moves your existing data into that site, and makes the earliest administrator the installation administrator. Closed queue entries get their closing time set to their creation time, so their personal data is removed sooner, not later.
 
-- create the operator record and the first site (`default`), named after your current branding name;
-- move all existing rows (stations, zones, queue, charges, administrators, settings) into that site;
-- make the earliest administrator the **installation administrator** (the one who can manage sites and the operator);
-- set the time each already-closed queue entry was closed to the time it was created. The real closing time was not recorded before, so the retention clock for those entries starts from creation. That makes their personal details clear sooner, not later.
+Upgrades move forward only. To roll back, restore your backup.
 
-Upgrades only move forward. To go back, restore the backup you took.
+## Expect these changes
 
-## What changes for people using the site
+- Administrators sign in again if you used the built-in default JWT secret.
+- Existing addresses keep working for the default site, including payment and single sign-on callbacks.
+- Roaming is off, and retention is 30 days for queue data and payer details.
 
-- **Administrators are signed out once** if the installation previously used the built-in default JWT secret, because a new secret is generated. They sign in again.
-- **Existing public and admin addresses keep working.** The default site uses the same web and API addresses as before.
-- **Payment and single sign-on addresses do not change** for the default site. The Stripe, Square and single sign-on callbacks you already configured still apply.
-- **Roaming is off**, and **retention is set to 30 days** for both queue data and payer details. Check both (see [Operator checklist](operator-checklist.md)).
-
-## After upgrading
+## After you upgrade
 
 1. Sign in as the installation administrator.
-2. Open **Sites** and set the operator name. Add the country code and party ID only if you will roam.
-3. Open **Privacy** and confirm the retention periods match your obligations.
-4. Check **Integrations** still shows your payment providers as configured. If a key shows as unreadable, re-enter it (this happens when `CONFIG_ENCRYPTION_KEY` has changed).
-5. If you will add more sites, read [Operator checklist](operator-checklist.md#more-than-one-site).
+2. Open **Sites**, and set the operator name. Add a country code and party ID only if you roam.
+3. Open **Privacy**, and confirm the retention periods.
+4. Open **Integrations**, and confirm your payment providers still show as configured. If a key is unreadable, re-enter it. This happens when `CONFIG_ENCRYPTION_KEY` has changed.
+5. To add sites, follow [More than one site](operator-checklist.md#more-than-one-site).

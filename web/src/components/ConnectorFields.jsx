@@ -153,6 +153,45 @@ export function ConnectorFields({ count, details, onChange, intro }) {
                   fullWidth
                 />
               </Stack>
+              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5}>
+                <TextField
+                  select
+                  size="small"
+                  label="Phase wiring"
+                  value={String(d.phaseCount ?? '')}
+                  onChange={(e) => {
+                    onChange(id, 'phaseCount', e.target.value);
+                    if (e.target.value !== '1') onChange(id, 'phase', '');
+                  }}
+                  helperText="Used by load balancing to share each phase of the supply."
+                  fullWidth
+                >
+                  <MenuItem value="">Not set</MenuItem>
+                  <MenuItem value="1">Single-phase</MenuItem>
+                  <MenuItem value="3">Three-phase</MenuItem>
+                </TextField>
+                <TextField
+                  select
+                  size="small"
+                  label="Phase"
+                  disabled={String(d.phaseCount ?? '') !== '1'}
+                  value={d.phase ?? ''}
+                  onChange={(e) => onChange(id, 'phase', e.target.value)}
+                  helperText={String(d.phaseCount ?? '') === '1' ? 'The phase this connector is wired to.' : 'Only for single-phase connectors.'}
+                  fullWidth
+                >
+                  <MenuItem value="">Not set</MenuItem>
+                  <MenuItem value="L1">L1</MenuItem>
+                  <MenuItem value="L2">L2</MenuItem>
+                  <MenuItem value="L3">L3</MenuItem>
+                </TextField>
+              </Stack>
+              {String(d.phaseCount ?? '') === '' && (
+                <Alert severity="warning">
+                  Phase wiring is not set for this connector. Load balancing counts it on all three phases, so the site's
+                  capacity may be under-reported. Set it to single-phase or three-phase.
+                </Alert>
+              )}
             </Stack>
           </Paper>
         );

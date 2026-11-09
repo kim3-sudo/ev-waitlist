@@ -1,136 +1,168 @@
-# Charge point features, firmware, OCPP 2.0.1, tax and billing
+# Charge point features
 
-This covers what was added for white-label deployments, where the charge points a site uses are not known in advance.
+Turn features on per charge point. Each feature sends its messages only when its switch is on, so hardware never receives a message it can't handle.
 
-## Turn features on per charge point
+## Turn on features
 
-Each charge point has three switches, set when it is added and in its settings:
+Set these when you add a charge point, or later in its settings. All three are **off by default**, including for existing charge points.
 
-| Switch | What it allows |
+| Switch | Enables |
 |---|---|
-| Smart charging | Power limits sent by the server (`SetChargingProfile`, `ClearChargingProfile`). |
-| Firmware updates and diagnostics logs | Firmware install (`UpdateFirmware`) and diagnostics log requests (`GetDiagnostics`, or `GetLog` on OCPP 2.0.1). |
-| Local authorization list | The site's ID tag list is sent to the charge point (`SendLocalList`), so it can decide offline. |
+| Smart charging | Power limits (`SetChargingProfile`, `ClearChargingProfile`) |
+| Firmware updates and diagnostics logs | Firmware installs (`UpdateFirmware`) and log requests (`GetDiagnostics`, or `GetLog` on OCPP 2.0.1) |
+| Local authorization list | The site's ID tag list (`SendLocalList`), so the charge point decides offline |
 
-All three are **off by default**, including for charge points that existed before this version. The server sends a feature's message only when its switch is on, so hardware that lacks a feature is never sent a message it cannot answer. After an upgrade, turn on the switches for the charge points that support them.
+After you upgrade, turn on the switches your charge points support.
 
-## Firmware and diagnostics logs
+## Manage firmware and logs
 
-Files are kept on the server's local disk, under `<data directory>/files/firmware` and `<data directory>/files/diagnostics`. The database holds each file's name, size and SHA-256 checksum.
+Files are stored on the server's disk under `<data directory>/files/`. The database stores each file's name, size, and SHA-256 checksum.
 
-- **Firmware page** (Charge point features > Firmware and diagnostics): upload, name, version, vendor, model and notes, edit, download and delete. The file is uploaded up to 200 MB.
-- **Diagnostics logs** appear on the same page, filtered by charge point. Each can be downloaded or deleted. Uploads are limited to 100 MB.
-- **Sending firmware:** on a charge point's page, choose a firmware image and press Install. The charge point receives a link that is signed and valid for three days. It works only for that image.
-- **Requesting diagnostics:** on the charge point's page, press Request diagnostics log. The charge point receives a one-time upload address valid for 48 hours. The log then appears on the Firmware page.
+1. Go to **Charge point features > Firmware and diagnostics**.
+2. Upload firmware (up to 200 MB), and add its name, version, vendor, model, and notes.
+3. To install firmware, open the charge point, choose an image, and select **Install**. The charge point gets a signed link valid for three days, for that image only.
+4. To get a diagnostics log, open the charge point and select **Request diagnostics log**. The charge point gets a one-time upload address valid for 48 hours. Logs appear on the same page, where you can download or delete them (100 MB limit).
 
-Limits to know about:
+Before you start, do these:
 
-- Firmware is **not** cryptographically signed by the server, so the charge point must check the image itself if it can. Only upload firmware from the vendor.
-- Deleting a firmware image also stops any charge point that has not yet downloaded it.
-- The site needs its public web address set (the PUBLIC_URL setting) before a charge point can reach the file or the upload address.
+- Set the public address (`PUBLIC_URL`). Charge points need it to reach files.
+- Upload firmware only from the vendor. The server doesn't sign firmware, so have the charge point verify the image if it can.
+- Know that deleting a firmware image stops any charge point that hasn't downloaded it yet.
 
-## Smart charging
+## Use smart charging
 
-Admins set a limit in amps for the whole charge point or for one connector, and remove it. This is a fixed limit.
+Set a fixed amp limit for a whole charge point or one connector, and remove it when you no longer need it. A connector limit works as a **ceiling**. Load balancing and schedules never send a higher limit. Schedules and events can lower a limit, but never raise it.
 
-## Load balancing
+If a schedule holds a connector below its manual limit, the server shows a warning in the status dialog, on the Load balancing page, and in the charge point's history. You can still set a manual limit above a schedule's ceiling.
 
-If a site's electrical supply cannot run every charge point at full power at once, turn on load balancing under Charge point features > Load balancing and enter the site supply in kW.
+### Create time-of-day schedules
 
-- While load balancing is on, each charge point with smart charging on that is charging shares the supply equally, rounded down to whole amps and capped at the connector's own maximum. Each connector has a minimum of 6 A. If the supply cannot give every charging connector that minimum, the result is reported as over capacity.
-- A connector that is not charging is left at its own maximum, so the next car starts at full power.
-- The balance is worked out again when a session starts or stops, and on each change to the settings. Limits are sent only when they change.
-- Load balancing overrides a manual limit set on a charge point's page. Turn load balancing off to return to manual limits.
-- Charge points that are offline are skipped. They are set when they reconnect and the next balance runs.
-- The supply is assumed to be single-phase at 230 V per connector, unless a connector has a voltage set in its details.
+A schedule caps connectors during a time window, such as 16 A from 17:00 to 21:00 on weekdays. Add schedules with `PUT /api/admin/load-balancing/config` under `schedules`.
 
-## Local authorization list
+- Give each schedule a name, days (0 is Sunday, 6 is Saturday), start and end times (`HH:MM`), a limit from 6 to 80 A, and optionally a list of charge points. An empty list covers all of them.
+- The end time is excluded. An overnight window (start later than end) belongs to the day it starts.
+- Set `timeZone` to an IANA name such as `Europe/London`. The default is UTC.
+- When windows overlap, the lowest limit wins.
+- Schedules cap idle connectors too, so the next car starts at the limit. They work even when load balancing is off.
 
-Under Charge point features > Local authorization list, add ID tags as:
+### Add dynamic events (curtailment)
 
-- **Accepted**: may charge on a charge point that keeps the list, including while offline.
-- **Blocked**: refused everywhere. The server also refuses blocked tags in its own authorization.
+Use an event to cut supply for a period, such as when a utility asks you to reduce demand from 16:00 to 18:00. Add events to the `events` list in the same configuration. Each event needs a name, start and end times, and an amp capacity per phase. Set phase capacity first.
 
-The whole list (up to 500 entries) is sent after each change to every connected charge point that has the switch on. Blocking a tag takes effect offline only after the list reaches the charge point, so a charge point that is offline keeps the old list until it reconnects and receives the new one.
+The supply on each phase is the lower of its base capacity and any active event. When an event ends, the base capacity returns.
 
-## OCPP 2.0.1
+## Balance load
 
-Charge points can connect with OCPP 1.6J or OCPP 2.0.1. The version is negotiated on connection. Each session is billed and recorded the same way on both versions.
+If your supply can't power every charge point at full power at once, load balancing shares it. Choose one of two modes.
 
-Supported on 2.0.1:
+**Per phase (recommended).**
+
+1. Set the supply in amps for each phase (`phaseCapacityA`: L1, L2, and L3) in the configuration.
+2. On each connector's details, set `phaseCount` (1 or 3). For a single-phase connector, also set `phase` (L1, L2, or L3).
+
+A three-phase connector draws from all three phases. A single-phase connector draws from its own phase. A connector with no wiring set counts on every phase, which is the safe choice. The server shares the supply fairly and rounds each limit down to whole amps. It reports the phases that limit supply in `saturatedPhases`.
+
+**Total kW (original mode).**
+
+1. Enter the total supply in kW under **Charge point features > Load balancing**.
+2. Leave phase capacity empty.
+
+The server splits the supply equally across charging connectors. It assumes 230 V single-phase, unless you set a connector's voltage. This mode doesn't support events.
+
+**In both modes:**
+
+- Each connector gets at least 6 A. If the supply can't meet that minimum, the server reports it as over capacity.
+- An idle connector stays at its maximum, so the next car starts at full power.
+- The server recalculates when a session starts or stops, when you change settings, and every minute. The minute check applies schedules and events at their start and end times.
+- A manual limit acts as a ceiling. The server uses the lower of the two.
+- To return to each charge point's own limits, turn off load balancing or remove the manual limit.
+- Offline charge points get their limits when they reconnect.
+
+Set supply and schedules under **Load balancing**. Set phase wiring on each charge point's connector section.
+
+## Manage the local authorization list
+
+Under **Charge point features > Local authorization list**, add ID tags as:
+
+- **Accepted:** can charge on a charge point that keeps the list, even offline.
+- **Blocked:** refused everywhere. The server also refuses blocked tags.
+
+The server sends the full list (up to 500 entries) to each connected charge point with the switch on, after every change. An offline charge point keeps its old list until it reconnects.
+
+## Use OCPP 2.0.1
+
+Charge points can connect with OCPP 1.6J or 2.0.1. The server negotiates the version, and sessions are billed the same way on both.
+
+**Supported on 2.0.1:**
 
 - Connection: `BootNotification`, `Heartbeat`, `StatusNotification`, `DataTransfer`
-- Authorization: `Authorize`, with blocked tags refused
-- Sessions: `TransactionEvent` (Started, Updated, Ended) with meter values and billing. A session that starts with an unauthorized tag is stopped with `RequestStopTransaction`.
+- Authorization: `Authorize`. Blocked tags are refused.
+- Sessions: `TransactionEvent` (Started, Updated, Ended), with meter values and billing. A session that starts with an unauthorized tag is stopped with `RequestStopTransaction`.
 - Meter values: `MeterValues`
 - Firmware and logs: `FirmwareStatusNotification`, `LogStatusNotification`
-- Commands sent by the server: stop a session, unlock a connector, reset, trigger a message, change availability, clear cache, firmware update, diagnostics log, charging limits, and the local list
+- Server commands: stop a session, unlock a connector, reset, trigger a message, change availability, clear cache, update firmware, request diagnostics, set charging limits, and manage the local list
 
-Not supported on 2.0.1 in this version:
+**Not supported on 2.0.1:**
 
-- Configuration (`GetConfiguration` and `ChangeConfiguration`, which are `GetVariables` and `SetVariables` on 2.0.1)
+- Configuration (use `GetVariables` and `SetVariables` instead of `GetConfiguration` and `ChangeConfiguration`)
 - Reservations
-- Device model reporting, and security profiles that use certificates
-- Start of a session by the server (`RequestStartTransaction`)
+- Device model reporting and certificate-based security profiles
+- `RequestStartTransaction`
 - Charge points with more than one EVSE. Connector numbers map to EVSE 1.
 
-Commands with no 2.0.1 equivalent in this version are refused with a message, and nothing is sent. The OCPP 2.0.1 message shapes are checked against the official JSON schema on both sides of the connection.
+The server refuses commands with no 2.0.1 equivalent and sends nothing. The server checks 2.0.1 messages against the official JSON schema.
 
-## Tax
+## Set up tax
 
-Tax rules are set under Billing > Tax rules. Each rule has:
+Go to **Billing > Tax rules** and add a rule:
 
-- a **rate**, in percent (for example 20 for 20%);
-- a **mode**: added on top of the price (exclusive), or already included in it (inclusive);
-- **what it applies to**: every session, sessions priced per kWh, or sessions priced per minute;
-- **where it applies**: the whole site, one zone, or one charge point;
-- an optional **validity window** and a **priority** (lower numbers are applied first).
+- **Rate:** a percentage, such as `20` for 20%.
+- **Mode:** *exclusive* adds tax on top of the price, or *inclusive* keeps tax inside the price.
+- **Applies to:** every session, per-kWh sessions, or per-minute sessions.
+- **Scope:** the whole site, one zone, or one charge point.
+- **Validity window** (optional) and **priority** (lower numbers apply first).
 
-Rules combine like this: inclusive rules are taken out of the price first, and the remaining net amount then gets the added rules. Added rules do not compound on each other. Each tax is rounded half-up to the cent.
+The server removes inclusive taxes from the price first, then adds exclusive taxes to the net amount. Exclusive taxes don't compound. It rounds each tax half-up to the cent.
 
-Use **Check a price** on the Tax rules tab to see how a price would be taxed before any driver is charged.
+Select **Check a price** on the Tax rules tab to preview tax before you charge anyone. The server calculates tax when a session ends and stores it on the charge, so later rule changes don't affect past charges. Rules that name a deleted zone or charge point are ignored.
 
-Tax is worked out when a session ends, and stored on the charge with the rules that applied. Changing a rule later does not change charges already made.
+Before you take payment, have your accountant confirm your rules and document requirements. The software applies the rules you enter. It doesn't know your jurisdiction's requirements.
 
-## Receipts and invoices
+## Issue receipts and invoices
 
-- **Consumer receipts** are issued automatically when a charge is paid. Each receipt has a number such as `RCP-2026-00001`.
-- **B2B invoices** are issued to a customer from paid charges you select. Each invoice has a number such as `INV-2026-00001` and a due date from the payment terms. A charge goes on one invoice only.
-- **Credit notes** correct an invoice. They repeat its lines with negative amounts, and an invoice can be credited once.
-- Documents are printable HTML pages. Use the browser's print to save a PDF.
-- Numbers come from a counter per site and document type, updated in the same transaction as the document, so they do not repeat or skip.
+- **Consumer receipts** issue automatically when a charge is paid, numbered like `RCP-2026-00001`.
+- **B2B invoices** cover paid charges you select, numbered like `INV-2026-00001`. Each charge goes on one invoice only. Due dates come from the payment terms.
+- **Credit notes** reverse an invoice with negative lines. Each invoice can be credited once.
+- Print any document from the browser, and choose **Save as PDF**.
 
-Limits to know about:
+Email and tax options:
 
-- E-mail: if e-mail is set up for the site, receipts can be e-mailed to drivers who gave an e-mail address, and invoices to the customer's invoice address. Both are off until switched on in the Business details tab; the switch is refused while e-mail is not set up. The e-mail carries a link to the receipt, served at `/api/receipts/<charge token>`. Invoice e-mails carry a text summary, not the printed page.
-- Tax exemption is for business (B2B) customers. An exempt customer's invoices carry no tax, and print the exemption reference. Reverse charge and per-customer tax rules are not supported. Consumer receipts are always taxed.
-- Price shown to drivers does not yet say whether tax is included.
-- A card hold is placed before tax is known, so a hold can be smaller than the final total. The difference is charged through the usual payment link.
-- Rules that name a zone or charge point that has been deleted are ignored, rather than blocking charges.
+- To email receipts or invoices, set up email for the site, then turn on the switch in **Business details**. The email links to the receipt at `/api/receipts/<charge token>`. Invoice emails contain a text summary, not the printed page.
+- For tax-exempt B2B customers, invoices carry no tax and print the exemption reference. The software doesn't support reverse charge or per-customer tax rules. Consumer receipts always include tax.
+- Price displays to drivers don't yet show whether tax is included.
+- Card holds are placed before tax is known, so a hold can be smaller than the final total. The payment link collects the difference.
 
-Before you take payment for charging, have your accountant confirm the rules and the document requirements for your jurisdiction. The software applies the rules you enter. It does not know what your jurisdiction requires.
+## Create charging plans
 
-## Charging plans (subscriptions)
+Under **Charging plans**, define a plan with a name, a monthly fee in cents, and a discount percentage. Enroll drivers by their ID tag.
 
-Under Charging plans, an admin defines plans: a name, a monthly fee in cents, and a discount percentage on sessions. A driver is enrolled by their ID tag.
+- Subscribers get their discount before tax. The charge records it.
+- Each ID tag can have one active plan. To retire a plan with subscribers, close it to new enrolments. You can't delete it.
+- Choose a billing customer when you enroll a subscriber. Select **Bill this month's plan fees** to put fees on one invoice per customer. Each subscription bills once per calendar month.
+- Subscribers without a billing customer get the discount, but you must collect their fee yourself. The software doesn't collect consumer subscription fees yet.
 
-- A subscriber's sessions get the plan's discount before tax. The discount is recorded on the charge.
-- Only one active plan per ID tag. A plan with subscribers cannot be deleted; close it to new subscribers instead.
-- The monthly fee is billed to the subscriber's billing customer, when one is chosen at enrolment. The "Bill this month's plan fees" button puts the fees on one invoice per customer. Each subscription is billed once per calendar month, so pressing the button again does nothing for a month already billed.
-- Subscribers with no billing customer get the discount, but the server does not collect their fee. Collecting consumer subscription fees needs a payment arrangement that is not built yet.
+## Reverse a charge
 
-## Reversing a charge
+On the Receipts tab, select **Reverse** and enter a reason. The receipt shows the reversal and reason, and the charge leaves the invoiceable list.
 
-On the Receipts tab, Reverse records that a paid or unpaid charge was reversed, with a required reason. The receipt then shows the reversal and its reason. A reversed charge leaves the list of charges that can be invoiced.
+Reversal records the change only. It doesn't move money. Refund the payment at your payment provider. If the charge is on an invoice, issue a credit note as well. The reply tells you which.
 
-Reversal records the change only. It does not move money: refund the payment in your payment provider. If the charge is already on an invoice, issue a credit note for that invoice too. The reply tells you which.
+## Set up webhooks
 
-## Webhooks
-
-Under Webhooks, add an endpoint with an https address and choose the events to send, or all of them. The secret is shown once, when the endpoint is created. Store it with the receiving system.
+Under **Webhooks**, add an `https` endpoint and choose its events, or select all. The secret appears once, when you create the endpoint. Store it in your receiving system.
 
 Events: charge paid, charge reversed, session started, session stopped, station faulted, invoice issued, subscription started, subscription cancelled.
 
-Each post is JSON, with headers `X-Plugyard-Event`, `X-Plugyard-Delivery`, and `X-Plugyard-Signature`. The signature is `t=<unix seconds>,v1=<HMAC-SHA256 of "<t>.<body>">`, keyed with the endpoint's secret. Check it, and refuse a timestamp more than five minutes old.
+Each post is JSON with headers `X-Plugyard-Event`, `X-Plugyard-Delivery`, and `X-Plugyard-Signature`. The signature has the form `t=<unix seconds>,v1=<HMAC-SHA256 of "<t>.<body>">`, keyed with the endpoint secret. Verify the signature, and reject timestamps older than five minutes.
 
-A post that fails is retried after one minute, then two, four, and so on, up to six hours, and given up after ten attempts. The delivery log shows each event's result and lets you retry one. Addresses on this machine or a private network are refused, unless the operator sets WEBHOOK_ALLOW_PRIVATE_NETWORKS=1.
+Failed posts retry after 1, 2, 4 minutes, and so on, up to six hours, then stop after ten attempts. Use the delivery log to see results and retry an event. The server blocks addresses on private networks unless you set `WEBHOOK_ALLOW_PRIVATE_NETWORKS=1`.
