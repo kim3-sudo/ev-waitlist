@@ -1,0 +1,17 @@
+-- AlterTable
+ALTER TABLE `Tenant` ADD COLUMN `address` VARCHAR(191) NULL,
+    ADD COLUMN `amenities` VARCHAR(191) NULL,
+    ADD COLUMN `city` VARCHAR(191) NULL,
+    ADD COLUMN `country` VARCHAR(191) NULL,
+    ADD COLUMN `hours` VARCHAR(191) NULL,
+    ADD COLUMN `latitude` DOUBLE NULL,
+    ADD COLUMN `longitude` DOUBLE NULL,
+    ADD COLUMN `postalCode` VARCHAR(191) NULL;
+
+-- AlterTable
+ALTER TABLE `Station` ADD COLUMN `amenities` VARCHAR(191) NULL,
+    ADD COLUMN `city` VARCHAR(191) NULL,
+    ADD COLUMN `country` VARCHAR(191) NULL,
+    ADD COLUMN `hours` VARCHAR(191) NULL,
+    ADD COLUMN `postalCode` VARCHAR(191) NULL;
+

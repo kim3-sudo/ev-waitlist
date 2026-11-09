@@ -9,6 +9,8 @@ import { samlRouter } from './auth/saml.routes.js';
 import { requireAdmin, requirePermission, requireReadOrManage } from './auth/auth.middleware.js';
 import { stationsRouter } from './routes/stations.routes.js';
 import { zonesRouter } from './routes/zones.routes.js';
+import { locatorRouter } from './routes/locator.routes.js';
+import { adminLocatorRouter } from './routes/admin.locator.routes.js';
 import { waitlistRouter } from './routes/waitlist.routes.js';
 import { adminStationsRouter } from './routes/admin.stations.routes.js';
 import { adminStationCommandsRouter } from './routes/admin.stationCommands.routes.js';
@@ -67,6 +69,8 @@ export function createApp() {
   app.use('/api/auth/saml', samlRouter);
   app.use('/api/stations', stationsRouter);
   app.use('/api/zones', zonesRouter);
+  // The charger locator across all sites (list, by site, and map points).
+  app.use('/api/locator', locatorRouter);
   app.use('/api/notices', noticesRouter);
   app.use('/api/waitlist', waitlistRouter);
   // The public REST API. Its routes authenticate with API keys, not admin sessions.
@@ -78,6 +82,8 @@ export function createApp() {
   // Commands to charge points. Its own prefix, so viewers who can see stations are not blocked by it.
   app.use('/api/admin/station-commands', requireAdmin, requirePermission('stations.control'), adminStationCommandsRouter);
   app.use('/api/admin/zones', requireAdmin, requireReadOrManage('zones.view', 'zones.manage'), adminZonesRouter);
+  // The site's own pin and address, and address lookup for the pin picker.
+  app.use('/api/admin/locator', requireAdmin, requireReadOrManage('stations.view', 'stations.manage'), adminLocatorRouter);
   app.use('/api/settings', settingsRouter);
   app.use('/api/pay', payRouter);
 
@@ -87,6 +93,7 @@ export function createApp() {
   sitePublicRouter.use('/auth/saml', samlRouter);
   sitePublicRouter.use('/stations', stationsRouter);
   sitePublicRouter.use('/zones', zonesRouter);
+  sitePublicRouter.use('/locator', locatorRouter);
   sitePublicRouter.use('/notices', noticesRouter);
   sitePublicRouter.use('/waitlist', waitlistRouter);
   sitePublicRouter.use('/settings', settingsRouter);

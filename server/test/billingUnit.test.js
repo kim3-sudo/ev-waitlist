@@ -67,7 +67,7 @@ describe('time billing unit', () => {
     const ok = await authed(request(app).put('/api/admin/payments/settings')).send({
       pricingModel: 'TIME',
       timeBillingUnit: 'HOUR',
-      ratePerMinuteCents: 600,
+      ratePerMinuteCents: 200,
     });
     assert.equal(ok.status, 200, JSON.stringify(ok.body));
     assert.equal(ok.body.settings.timeBillingUnit, 'HOUR');

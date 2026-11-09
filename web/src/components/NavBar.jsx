@@ -102,6 +102,9 @@ function CollapsedNavMenu({ email, isAuthenticated, onLogout }) {
         <MenuItem component={RouterLink} to="/" onClick={close}>
           Waitlist
         </MenuItem>
+        <MenuItem component={RouterLink} to="/locator" onClick={close}>
+          Find a charger
+        </MenuItem>
         {isAuthenticated ? (
           [
             <MenuItem key="reports" component={RouterLink} to="/reports" onClick={close}>
@@ -180,6 +183,9 @@ export function NavBar() {
           <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexShrink: 0 }}>
             <Button component={RouterLink} to="/" color="inherit">
               Waitlist
+            </Button>
+            <Button component={RouterLink} to="/locator" color="inherit">
+              Find a charger
             </Button>
             {isAuthenticated ? (
               <>

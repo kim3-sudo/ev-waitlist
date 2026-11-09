@@ -14,6 +14,7 @@ const SECTIONS = [
     items: [
       { label: 'Charge points', path: '/admin', end: true, permission: 'stations.view' },
       { label: 'Zones', path: '/admin/zones', permission: 'zones.view' },
+      { label: 'Site location', path: '/admin/location', permission: 'stations.manage' },
       { label: 'Alerts', path: '/admin/alerts', permission: 'alerts.manage' },
     ],
   },

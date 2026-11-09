@@ -39,6 +39,18 @@ model Tenant {
   // Retention, in days, for payer details on charges. Null keeps them indefinitely.
   financialRetentionDays Int? @default(30)
 
+  // Where the site is, for the charger locator (see services/locator.js). The
+  // pin on the map. Stations keep their own coordinates.
+  address     String?
+  city        String?
+  postalCode  String?
+  country     String?
+  latitude    Float?
+  longitude   Float?
+  // Opening hours in free text (e.g. "24/7") and a comma-separated list of amenities.
+  hours       String?
+  amenities   String?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -188,6 +200,12 @@ model Station {
   // Coordinates shown to roaming partners. Blank stations are not published.
   latitude          Float?
   longitude         Float?
+  // Locator details. Blank values fall back to the site's (see services/locator.js).
+  city              String?
+  postalCode        String?
+  country           String?
+  hours             String?
+  amenities         String?
   // What the charge point reported when it booted (BootNotification) and since then.
   serialNumber      String?
   firmwareVersion   String?

@@ -1,3 +1,4 @@
+import { lazy, Suspense } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { Box } from '@mui/material';
 import { NavBar } from './components/NavBar.jsx';
@@ -38,13 +39,27 @@ import { SiteScope } from './components/SiteScope.jsx';
 import { AdminSitesPage } from './pages/AdminSitesPage.jsx';
 import { AdminPrivacyPage } from './pages/AdminPrivacyPage.jsx';
 import { AdminRoamingPage } from './pages/AdminRoamingPage.jsx';
+import { AdminLocationPage } from './pages/AdminLocationPage.jsx';
+
+// The locator loads its map library, so it is split out and loaded only when opened.
+const LocatorPage = lazy(() => import('./pages/LocatorPage.jsx').then((m) => ({ default: m.LocatorPage })));
 
 export default function App() {
   return (
     <Box sx={{ minHeight: '100vh', bgcolor: 'background.default' }}>
       <NavBar />
+      <Suspense fallback={null}>
       <Routes>
         <Route path="/" element={<PublicWaitlistPage />} />
+        <Route path="/locator" element={<LocatorPage />} />
+        <Route
+          path="/t/:slug/locator"
+          element={
+            <SiteScope>
+              <LocatorPage />
+            </SiteScope>
+          }
+        />
         <Route path="/login" element={<LoginPage />} />
         <Route path="/sso/callback" element={<SsoCallbackPage />} />
         <Route path="/pay/hold/:token" element={<PayHoldPage />} />
@@ -123,6 +138,14 @@ export default function App() {
         >
           <Route index element={<AdminStationsPage />} />
           <Route path="zones" element={<AdminZonesPage />} />
+          <Route
+            path="location"
+            element={
+              <PermissionRoute permission="stations.manage">
+                <AdminLocationPage />
+              </PermissionRoute>
+            }
+          />
           <Route path="complaints" element={<Navigate to="/reports/complaints" replace />} />
           <Route path="reports" element={<Navigate to="/reports/idle" replace />} />
           <Route
@@ -263,6 +286,7 @@ export default function App() {
           />
         </Route>
       </Routes>
+      </Suspense>
     </Box>
   );
 }

@@ -14,6 +14,7 @@ import {
 } from '@mui/material';
 import { api } from '../api/client.js';
 import { ConnectorFields } from './ConnectorFields.jsx';
+import { LocationPicker } from './locator/LocationPicker.jsx';
 import { ConnectionTest } from './ConnectionTest.jsx';
 
 const emptyForm = {
@@ -24,6 +25,11 @@ const emptyForm = {
   location: '',
   latitude: '',
   longitude: '',
+  city: '',
+  postalCode: '',
+  country: '',
+  hours: '',
+  amenities: '',
   connectorCount: 1,
   zoneId: '',
 };
@@ -40,6 +46,11 @@ export function StationFormDialog({ station, onClose, onSaved }) {
           location: station.location ?? '',
           latitude: station.latitude ?? '',
           longitude: station.longitude ?? '',
+          city: station.city ?? '',
+          postalCode: station.postalCode ?? '',
+          country: station.country ?? '',
+          hours: station.hours ?? '',
+          amenities: station.amenities ?? '',
           connectorCount: station.connectors.length || 1,
           zoneId: station.zoneId ?? '',
         }
@@ -141,6 +152,45 @@ export function StationFormDialog({ station, onClose, onSaved }) {
               />
               <TextField label="Longitude" value={form.longitude} onChange={update('longitude')} fullWidth />
             </Stack>
+            <LocationPicker
+              latitude={form.latitude}
+              longitude={form.longitude}
+              onChange={({ latitude, longitude }) =>
+                setForm((f) => ({ ...f, latitude: String(latitude), longitude: String(longitude) }))
+              }
+              onPick={(result) =>
+                setForm((f) => {
+                  const a = result.address;
+                  const street = [a.house_number, a.road].filter(Boolean).join(' ');
+                  return {
+                    ...f,
+                    location: f.location || street,
+                    city: f.city || a.city || a.town || a.village || '',
+                    postalCode: f.postalCode || a.postcode || '',
+                    country: f.country || a.country || '',
+                  };
+                })
+              }
+            />
+            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
+              <TextField label="City" value={form.city} onChange={update('city')} fullWidth />
+              <TextField label="Postal code" value={form.postalCode} onChange={update('postalCode')} fullWidth />
+              <TextField label="Country" value={form.country} onChange={update('country')} fullWidth />
+            </Stack>
+            <TextField
+              label="Opening hours"
+              helperText="Leave blank to use the site's hours"
+              value={form.hours}
+              onChange={update('hours')}
+              fullWidth
+            />
+            <TextField
+              label="Nearby amenities"
+              helperText="Comma-separated, e.g. Coffee, Restrooms, Shops"
+              value={form.amenities}
+              onChange={update('amenities')}
+              fullWidth
+            />
             <TextField
               select
               label="Zone"

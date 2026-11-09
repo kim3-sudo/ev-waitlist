@@ -5,6 +5,7 @@ import { registry } from '../services/stationRegistry.js';
 import { enqueueForActivePartners } from '../ocpi/outbox.js';
 import { CONNECTOR_STANDARDS, CONNECTOR_FORMATS, POWER_TYPES, powerTypeAllowed } from '../ocpi/mappers.js';
 import { latestReadings } from '../services/meterService.js';
+import { coordinatesProblem, locatorTextFields } from '../services/locator.js';
 
 export const adminStationsRouter = Router();
 
@@ -18,6 +19,11 @@ function serialize(station) {
     location: station.location,
     latitude: station.latitude,
     longitude: station.longitude,
+    city: station.city,
+    postalCode: station.postalCode,
+    country: station.country,
+    hours: station.hours,
+    amenities: station.amenities,
     zoneId: station.zoneId,
     zoneName: station.zone?.name ?? null,
     online: registry.isConnected(station.identity),
@@ -99,17 +105,6 @@ export function identityError(identity) {
   if (!IDENTITY_PATTERN.test(identity)) {
     return 'Use 1-64 letters, digits, or the characters . _ : - (no spaces or slashes)';
   }
-  return null;
-}
-
-// Coordinates are optional. A station with coordinates is published to roaming partners.
-function coordinatesError(latitude, longitude) {
-  const lat = latitude === '' ? null : latitude;
-  const lon = longitude === '' ? null : longitude;
-  if ((lat == null) !== (lon == null)) return 'Give both latitude and longitude, or neither';
-  if (lat == null) return null;
-  if (!Number.isFinite(lat) || lat < -90 || lat > 90) return 'latitude must be a number from -90 to 90';
-  if (!Number.isFinite(lon) || lon < -180 || lon > 180) return 'longitude must be a number from -180 to 180';
   return null;
 }
 
@@ -389,8 +384,10 @@ adminStationsRouter.get('/:id/status', async (req, res) => {
 
 adminStationsRouter.post('/', async (req, res) => {
   const { identity, name, vendor, model, location, connectorCount, zoneId, latitude, longitude, connectors } = req.body ?? {};
-  const coordsProblem = coordinatesError(latitude, longitude);
+  const coordsProblem = coordinatesProblem(latitude, longitude);
   if (coordsProblem) return res.status(400).json({ error: coordsProblem });
+  const textFields = locatorTextFields(req.body);
+  if (textFields.error) return res.status(400).json({ error: textFields.error });
   const newCount = Math.max(0, Number(connectorCount) || 1);
   const detailsProblem = connectorDetailsError(connectors, new Set(Array.from({ length: newCount }, (_, i) => i + 1)));
   if (detailsProblem) return res.status(400).json({ error: detailsProblem });
@@ -418,6 +415,7 @@ adminStationsRouter.post('/', async (req, res) => {
       zoneId: resolvedZone.zoneId,
       latitude: latitude ?? null,
       longitude: longitude ?? null,
+      ...textFields.fields,
     },
   });
 
@@ -434,8 +432,10 @@ adminStationsRouter.post('/', async (req, res) => {
 
 adminStationsRouter.put('/:id', async (req, res) => {
   const { identity, name, vendor, model, location, connectorCount, zoneId, latitude, longitude, connectors } = req.body ?? {};
-  const coordsProblem = coordinatesError(latitude, longitude);
+  const coordsProblem = coordinatesProblem(latitude, longitude);
   if (coordsProblem) return res.status(400).json({ error: coordsProblem });
+  const textFields = locatorTextFields(req.body);
+  if (textFields.error) return res.status(400).json({ error: textFields.error });
 
   const station = await prisma.station.findUnique({ where: { id: req.params.id } });
   if (!station) return res.status(404).json({ error: 'Station not found' });
@@ -470,6 +470,7 @@ adminStationsRouter.put('/:id', async (req, res) => {
       zoneId: resolvedZone.zoneId,
       ...(latitude !== undefined && { latitude: latitude === '' ? null : latitude }),
       ...(longitude !== undefined && { longitude: longitude === '' ? null : longitude }),
+      ...textFields.fields,
     },
   });
 
