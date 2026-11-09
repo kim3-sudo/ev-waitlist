@@ -34,6 +34,23 @@ const CONNECTOR_COLOR = {
   Faulted: 'error',
 };
 
+// Nobody is waiting and a connector is free: the driver can start charging now, rather than join a line.
+function canStartNow(waitingCount, connectors) {
+  return waitingCount === 0 && connectors.some((c) => c.status === 'Available');
+}
+
+// The tips the admin wrote for these charge points, for the dialog's Help tab.
+function tipsFor(stations) {
+  return stations.filter((s) => s.tips).map((s) => ({ stationName: s.name, text: s.tips }));
+}
+
+// Price changes covering these charge points, once each.
+function priceNoticesFor(stations) {
+  const seen = new Map();
+  for (const s of stations) for (const change of s.notices?.pricing ?? []) seen.set(change.id, change);
+  return [...seen.values()];
+}
+
 function loadMyEntries() {
   try {
     return JSON.parse(localStorage.getItem(MY_ENTRIES_KEY)) ?? [];
@@ -54,6 +71,8 @@ export function PublicWaitlistPage() {
   // While payment is down in lockout mode, nobody can join.
   const lockedOut = siteNotices.paymentOutage?.mode === 'LOCKOUT';
   const [myEntries, setMyEntries] = useState(loadMyEntries);
+  // What happened when each entry was made this visit (started, error, or put in line).
+  const [joinNotes, setJoinNotes] = useState({});
 
   useEffect(() => {
     let cancelled = false;
@@ -83,10 +102,11 @@ export function PublicWaitlistPage() {
     };
   }, []);
 
-  function handleJoined({ entryId }) {
+  function handleJoined({ entryId, ...notes }) {
     const next = [...myEntries, entryId];
     setMyEntries(next);
     saveMyEntries(next);
+    setJoinNotes((prev) => ({ ...prev, [entryId]: notes }));
     setJoinTarget(null);
   }
 
@@ -104,7 +124,7 @@ export function PublicWaitlistPage() {
             Your waitlist status
           </Typography>
           {myEntries.map((entryId) => (
-            <WaitlistStatusCard key={entryId} entryId={entryId} onLeave={handleLeave} />
+            <WaitlistStatusCard key={entryId} entryId={entryId} onLeave={handleLeave} initial={joinNotes[entryId]} />
           ))}
         </Box>
       )}
@@ -163,9 +183,18 @@ export function PublicWaitlistPage() {
                   variant="contained"
                   fullWidth
                   disabled={zone.stations.length === 0 || lockedOut}
-                  onClick={() => setJoinTarget({ kind: 'zone', id: zone.id, name: zone.name })}
+                  onClick={() =>
+                    setJoinTarget({
+                      kind: 'zone',
+                      id: zone.id,
+                      name: zone.name,
+                      mode: canStartNow(zone.waitingCount, zone.stations.flatMap((s) => s.connectors)) ? 'start' : 'join',
+                      tips: tipsFor(zone.stations),
+                      priceNotices: priceNoticesFor(zone.stations),
+                    })
+                  }
                 >
-                  Join waitlist
+                  {canStartNow(zone.waitingCount, zone.stations.flatMap((s) => s.connectors)) ? 'Start charging' : 'Join waitlist'}
                 </Button>
               </CardActions>
             </Card>
@@ -217,9 +246,18 @@ export function PublicWaitlistPage() {
                   variant="contained"
                   fullWidth
                   disabled={lockedOut}
-                  onClick={() => setJoinTarget({ kind: 'station', id: station.id, name: station.name })}
+                  onClick={() =>
+                    setJoinTarget({
+                      kind: 'station',
+                      id: station.id,
+                      name: station.name,
+                      mode: canStartNow(station.waitingCount, station.connectors) ? 'start' : 'join',
+                      tips: tipsFor([station]),
+                      priceNotices: priceNoticesFor([station]),
+                    })
+                  }
                 >
-                  Join waitlist
+                  {canStartNow(station.waitingCount, station.connectors) ? 'Start charging' : 'Join waitlist'}
                 </Button>
               </CardActions>
             </Card>
@@ -233,7 +271,12 @@ export function PublicWaitlistPage() {
       </Grid>
 
       {joinTarget && (
-        <WaitlistJoinDialog target={joinTarget} onClose={() => setJoinTarget(null)} onJoined={handleJoined} />
+        <WaitlistJoinDialog
+          target={joinTarget}
+          mode={joinTarget.mode}
+          onClose={() => setJoinTarget(null)}
+          onJoined={handleJoined}
+        />
       )}
     </Container>
   );

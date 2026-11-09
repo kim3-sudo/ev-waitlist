@@ -1,7 +1,11 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
+  Box,
   Container,
   Paper,
+  Tab,
+  Tabs,
   Typography,
   Button,
   Stack,
@@ -22,10 +26,31 @@ import { ChargePointWizardDialog } from '../components/ChargePointWizardDialog.j
 import { StationStatusDialog } from '../components/StationStatusDialog.jsx';
 import { usePagedList } from '../api/paged.js';
 import { LoadMore } from '../components/LoadMore.jsx';
+import { DashboardView } from '../components/dashboard/DashboardView.jsx';
 
 const POLL_MS = 8000;
 
+// The admin home page: a dashboard, and the charge points list. The tab is kept in the
+// address (?view=stations) so a link can open either one.
 export function AdminStationsPage() {
+  const [params, setParams] = useSearchParams();
+  const view = params.get('view') === 'stations' ? 'stations' : 'dashboard';
+  return (
+    <Container maxWidth="lg" sx={{ py: 4 }}>
+      <Tabs
+        value={view}
+        onChange={(_, next) => setParams(next === 'dashboard' ? {} : { view: next }, { replace: true })}
+        sx={{ mb: 3, borderBottom: 1, borderColor: 'divider' }}
+      >
+        <Tab value="dashboard" label="Dashboard" />
+        <Tab value="stations" label="Charge points" />
+      </Tabs>
+      {view === 'dashboard' ? <DashboardView /> : <ChargePointsView />}
+    </Container>
+  );
+}
+
+function ChargePointsView() {
   const { can } = useAuth();
   const canManage = can('stations.manage');
   const list = usePagedList('/api/admin/stations', { pollMs: POLL_MS });
@@ -52,7 +77,7 @@ export function AdminStationsPage() {
   }, [stations, search]);
 
   return (
-    <Container maxWidth="lg" sx={{ py: 4 }}>
+    <Box>
       <Stack direction="row" sx={{ justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
         <Typography variant="h5" fontWeight={600}>
           Charge points
@@ -134,6 +159,6 @@ export function AdminStationsPage() {
           </Button>
         </DialogActions>
       </Dialog>
-    </Container>
+    </Box>
   );
 }

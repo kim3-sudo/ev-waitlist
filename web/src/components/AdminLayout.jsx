@@ -36,7 +36,10 @@ const SECTIONS = [
   },
   {
     title: 'Branding',
-    items: [{ label: 'Branding', path: '/admin/branding', permission: 'branding.manage' }],
+    items: [
+      { label: 'Branding', path: '/admin/branding', permission: 'branding.manage' },
+      { label: 'About', path: '/admin/about', permission: 'branding.manage' },
+    ],
   },
   {
     title: 'Waitlist',

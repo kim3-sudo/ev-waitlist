@@ -5,9 +5,12 @@ import { registry } from '../services/stationRegistry.js';
 import { enqueueForActivePartners } from '../ocpi/outbox.js';
 import { CONNECTOR_STANDARDS, CONNECTOR_FORMATS, POWER_TYPES, powerTypeAllowed } from '../ocpi/mappers.js';
 import { latestReadings } from '../services/meterService.js';
-import { coordinatesProblem, locatorTextFields } from '../services/locator.js';
+import { cleanText, coordinatesProblem, locatorTextFields } from '../services/locator.js';
 
 export const adminStationsRouter = Router();
+
+// Longest note an admin can write for drivers about a charge point.
+const TIPS_MAX = 500;
 
 function serialize(station) {
   return {
@@ -24,6 +27,7 @@ function serialize(station) {
     country: station.country,
     hours: station.hours,
     amenities: station.amenities,
+    tips: station.tips ?? null,
     zoneId: station.zoneId,
     zoneName: station.zone?.name ?? null,
     online: registry.isConnected(station.identity),
@@ -388,6 +392,8 @@ adminStationsRouter.post('/', async (req, res) => {
   if (coordsProblem) return res.status(400).json({ error: coordsProblem });
   const textFields = locatorTextFields(req.body);
   if (textFields.error) return res.status(400).json({ error: textFields.error });
+  const tips = cleanText(req.body?.tips, 'Tips', TIPS_MAX);
+  if (tips.error) return res.status(400).json({ error: tips.error });
   const newCount = Math.max(0, Number(connectorCount) || 1);
   const detailsProblem = connectorDetailsError(connectors, new Set(Array.from({ length: newCount }, (_, i) => i + 1)));
   if (detailsProblem) return res.status(400).json({ error: detailsProblem });
@@ -416,6 +422,7 @@ adminStationsRouter.post('/', async (req, res) => {
       latitude: latitude ?? null,
       longitude: longitude ?? null,
       ...textFields.fields,
+      tips: tips.value,
     },
   });
 
@@ -436,6 +443,8 @@ adminStationsRouter.put('/:id', async (req, res) => {
   if (coordsProblem) return res.status(400).json({ error: coordsProblem });
   const textFields = locatorTextFields(req.body);
   if (textFields.error) return res.status(400).json({ error: textFields.error });
+  const tips = cleanText(req.body?.tips, 'Tips', TIPS_MAX);
+  if (tips.error) return res.status(400).json({ error: tips.error });
 
   const station = await prisma.station.findUnique({ where: { id: req.params.id } });
   if (!station) return res.status(404).json({ error: 'Station not found' });
@@ -471,6 +480,8 @@ adminStationsRouter.put('/:id', async (req, res) => {
       ...(latitude !== undefined && { latitude: latitude === '' ? null : latitude }),
       ...(longitude !== undefined && { longitude: longitude === '' ? null : longitude }),
       ...textFields.fields,
+      // Left alone when the request does not send tips at all.
+      tips: tips.value,
     },
   });
 

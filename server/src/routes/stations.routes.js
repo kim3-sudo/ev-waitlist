@@ -26,6 +26,8 @@ function serializeStation(station, notices = { alerts: [], pricing: [] }) {
     waitingCount: station.queueEntries.filter((e) => e.status === 'WAITING').length,
     // Alerts and price changes in effect for this charge point now.
     notices,
+    // The admin's notes for drivers about this charge point (e.g. where it is).
+    tips: station.tips ?? null,
   };
 }
 
@@ -87,8 +89,10 @@ stationsRouter.post('/:id/waitlist', async (req, res) => {
   );
 
   // In case a connector is already free right now, don't make them wait for
-  // the next StatusNotification.
-  tryDispatchStation(station.id).catch((err) => console.error('Dispatch on join failed:', err));
+  // the next StatusNotification. Awaited, so the reply says whether they are
+  // already NOTIFIED and can start charging straight away.
+  await tryDispatchStation(station.id).catch((err) => console.error('Dispatch on join failed:', err));
+  const current = await prisma.queueEntry.findUnique({ where: { id: entry.id }, select: { status: true } });
 
-  res.status(201).json({ id: entry.id });
+  res.status(201).json({ id: entry.id, status: current?.status ?? entry.status });
 });

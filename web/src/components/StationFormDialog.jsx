@@ -30,6 +30,7 @@ const emptyForm = {
   country: '',
   hours: '',
   amenities: '',
+  tips: '',
   connectorCount: 1,
   zoneId: '',
 };
@@ -51,6 +52,7 @@ export function StationFormDialog({ station, onClose, onSaved }) {
           country: station.country ?? '',
           hours: station.hours ?? '',
           amenities: station.amenities ?? '',
+          tips: station.tips ?? '',
           connectorCount: station.connectors.length || 1,
           zoneId: station.zoneId ?? '',
         }
@@ -189,6 +191,15 @@ export function StationFormDialog({ station, onClose, onSaved }) {
               helperText="Comma-separated, e.g. Coffee, Restrooms, Shops"
               value={form.amenities}
               onChange={update('amenities')}
+              fullWidth
+            />
+            <TextField
+              label="Tips for drivers"
+              helperText="Optional. Shown in the Help tab when a driver joins or starts charging here, e.g. where to find the charger. Up to 500 characters."
+              value={form.tips}
+              onChange={update('tips')}
+              multiline
+              minRows={2}
               fullWidth
             />
             <TextField

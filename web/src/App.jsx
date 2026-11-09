@@ -11,6 +11,7 @@ import { AccountPage } from './pages/AccountPage.jsx';
 import { AdminStationsPage } from './pages/AdminStationsPage.jsx';
 import { AdminZonesPage } from './pages/AdminZonesPage.jsx';
 import { AdminBrandingPage } from './pages/AdminBrandingPage.jsx';
+import { AdminAboutPage } from './pages/AdminAboutPage.jsx';
 import { AdminWaitlistPage } from './pages/AdminWaitlistPage.jsx';
 import { AdminTemplatesPage } from './pages/AdminTemplatesPage.jsx';
 import { AdminEmailPage } from './pages/AdminEmailPage.jsx';
@@ -193,6 +194,14 @@ export default function App() {
             element={
               <PermissionRoute permission="branding.manage">
                 <AdminBrandingPage />
+              </PermissionRoute>
+            }
+          />
+          <Route
+            path="about"
+            element={
+              <PermissionRoute permission="branding.manage">
+                <AdminAboutPage />
               </PermissionRoute>
             }
           />

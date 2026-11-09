@@ -22,6 +22,7 @@ function serializeZone(zone, notices) {
       .sort((a, b) => a.connectorId - b.connectorId)
       .map((c) => ({ connectorId: c.connectorId, status: c.status })),
     notices: notices.get(station.id) ?? { alerts: [], pricing: [] },
+    tips: station.tips ?? null,
   }));
 
   return {
@@ -76,8 +77,10 @@ zonesRouter.post('/:id/waitlist', async (req, res) => {
   );
 
   // In case a connector somewhere in the zone is already free right now,
-  // don't make them wait for the next StatusNotification.
-  tryDispatchZone(zone.id).catch((err) => console.error('Zone dispatch on join failed:', err));
+  // don't make them wait for the next StatusNotification. Awaited, so the reply
+  // says whether they are already NOTIFIED and can start charging straight away.
+  await tryDispatchZone(zone.id).catch((err) => console.error('Zone dispatch on join failed:', err));
+  const current = await prisma.queueEntry.findUnique({ where: { id: entry.id }, select: { status: true } });
 
-  res.status(201).json({ id: entry.id });
+  res.status(201).json({ id: entry.id, status: current?.status ?? entry.status });
 });

@@ -1,5 +1,6 @@
 import { prisma } from '../db.js';
 import { currentTenantId } from '../tenancy/context.js';
+import { normalizeHelpContacts, parseHelpContacts } from './helpContacts.js';
 import {
   effectivePlateRegions,
   isOfferedRegion,
@@ -35,6 +36,7 @@ export function settingsView(settings) {
     plateRegionSets: plateRegionSetList(),
     plateRegionCatalog: plateRegionCatalog(),
     defaultPlateRegion: settings.defaultPlateRegion ?? null,
+    helpContacts: parseHelpContacts(settings.helpContacts),
   };
 }
 
@@ -50,6 +52,7 @@ export async function updateSettings(data) {
     setupCompleted,
     plateRegionConfig,
     defaultPlateRegion,
+    helpContacts,
   } = data;
 
   if (identifierMode && !IDENTIFIER_MODES.includes(identifierMode)) {
@@ -87,6 +90,13 @@ export async function updateSettings(data) {
     if (!isOfferedRegion(config, current.defaultPlateRegion)) defaultRegion = null;
   }
 
+  let helpJson;
+  if (helpContacts !== undefined) {
+    const checked = normalizeHelpContacts(helpContacts);
+    if (checked.error) throw new Error(checked.error);
+    helpJson = JSON.stringify(checked.value);
+  }
+
   const shared = {
     companyName,
     logoUrl,
@@ -98,6 +108,7 @@ export async function updateSettings(data) {
     setupCompleted,
     plateRegions,
     defaultPlateRegion: defaultRegion,
+    helpContacts: helpJson,
   };
   return prisma.settings.upsert({
     where: { tenantId },

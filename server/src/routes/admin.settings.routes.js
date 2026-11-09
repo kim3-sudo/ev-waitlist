@@ -14,6 +14,7 @@ adminSettingsRouter.put('/', async (req, res) => {
     mfaRequired,
     plateRegionConfig,
     defaultPlateRegion,
+    helpContacts,
   } = req.body ?? {};
 
   try {
@@ -27,6 +28,7 @@ adminSettingsRouter.put('/', async (req, res) => {
       mfaRequired,
       plateRegionConfig,
       defaultPlateRegion,
+      helpContacts,
     });
     res.json(settingsView(settings));
   } catch (err) {

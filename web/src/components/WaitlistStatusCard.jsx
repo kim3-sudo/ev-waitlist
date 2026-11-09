@@ -39,12 +39,17 @@ function useCountdown(expiresAt) {
   return remainingMs;
 }
 
-export function WaitlistStatusCard({ entryId, onLeave }) {
+// `initial` says what happened when the driver joined (see WaitlistJoinDialog): whether
+// charging was already started, whether that failed, or whether they were put in line.
+export function WaitlistStatusCard({ entryId, onLeave, initial }) {
   const [data, setData] = useState(null);
   const [error, setError] = useState(false);
   const [starting, setStarting] = useState(false);
-  const [startError, setStartError] = useState('');
-  const [started, setStarted] = useState(false);
+  const [startError, setStartError] = useState(initial?.error ?? '');
+  const [started, setStarted] = useState(Boolean(initial?.started));
+  const [notice, setNotice] = useState(
+    initial?.waiting ? 'No charger was free just now, so you have been put in line.' : '',
+  );
   const [reportOpen, setReportOpen] = useState(false);
   const [reportNote, setReportNote] = useState('');
   const [reportSubmitting, setReportSubmitting] = useState(false);
@@ -148,6 +153,11 @@ export function WaitlistStatusCard({ entryId, onLeave }) {
         {started && (
           <Alert severity="success" sx={{ mt: 2 }}>
             Charger unlocked — plug in to begin.
+          </Alert>
+        )}
+        {notice && (
+          <Alert severity="info" sx={{ mt: 2 }} onClose={() => setNotice('')}>
+            {notice}
           </Alert>
         )}
         {reportSent && (

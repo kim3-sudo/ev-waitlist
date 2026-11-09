@@ -103,6 +103,16 @@ export function rateAt(grid, date) {
   return grid[date.getDay() * HOURS_PER_DAY + date.getHours()];
 }
 
+// Whether one window is in effect at a moment (server local time, as rateAt). An
+// overnight window's evening part belongs to the day it starts on, its morning part to the next day.
+export function windowActiveAt(rule, date) {
+  const day = date.getDay();
+  const hour = date.getHours();
+  const { days, startHour: start, endHour: end } = rule;
+  if (start < end) return days.includes(day) && hour >= start && hour < end;
+  return (days.includes(day) && hour >= start) || (days.includes((day + 6) % 7) && hour < end);
+}
+
 // The highest rate that applies at any time (the base rate, or a window's rate).
 export function highestRate(grid) {
   return Math.max(...grid);

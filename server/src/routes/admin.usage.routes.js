@@ -1,12 +1,12 @@
 import { Router } from 'express';
 import { prisma } from '../db.js';
+import { usageReport } from '../services/usageReport.js';
 
 // Usage reports: energy dispensed, and how the connectors' time was used (charging,
 // waiting for the car to be moved, or free). Mounted under /api/admin/reports, behind reports.view.
 export const adminUsageRouter = Router();
 
 const DAY_MS = 24 * 60 * 60 * 1000;
-const HOUR_MS = 60 * 60 * 1000;
 
 function clamp(value, min, max) {
   if (!Number.isFinite(value)) return min;
@@ -14,11 +14,6 @@ function clamp(value, min, max) {
 }
 
 const round1 = (value) => Math.round(value * 10) / 10;
-
-// The part of [start, end] that lies inside [from, to], in milliseconds.
-function overlapMs(start, end, from, to) {
-  return Math.max(0, Math.min(end, to) - Math.max(start, from));
-}
 
 // Energy in Wh from the meter readings, or null when the session has no usable reading.
 function energyWh(tx) {
@@ -110,62 +105,5 @@ adminUsageRouter.get('/energy', async (req, res) => {
 // Query: days (lookback, default 7, max 90).
 adminUsageRouter.get('/usage', async (req, res) => {
   const days = clamp(Number(req.query.days ?? 7), 1, 90);
-  const now = Date.now();
-  const from = now - days * DAY_MS;
-  const fromDate = new Date(from);
-  const nowDate = new Date(now);
-
-  const stations = await prisma.station.findMany({
-    include: { connectors: true },
-    orderBy: { name: 'asc' },
-  });
-  const sessions = await prisma.transaction.findMany({
-    where: { startedAt: { lt: nowDate }, OR: [{ stoppedAt: null }, { stoppedAt: { gte: fromDate } }] },
-    select: { stationId: true, startedAt: true, stoppedAt: true },
-  });
-  const idles = await prisma.idleEvent.findMany({
-    where: { startedAt: { lt: nowDate }, OR: [{ endedAt: null }, { endedAt: { gte: fromDate } }] },
-    select: { stationId: true, startedAt: true, endedAt: true },
-  });
-
-  const windowMs = now - from;
-  const rows = stations.map((station) => {
-    const connectors = station.connectors.filter((c) => c.connectorId > 0).length;
-    const availableMs = connectors * windowMs;
-
-    const stationSessions = sessions.filter((s) => s.stationId === station.id);
-    let chargingMs = 0;
-    for (const s of stationSessions) {
-      chargingMs += overlapMs(s.startedAt.getTime(), s.stoppedAt?.getTime() ?? now, from, now);
-    }
-    let waitingMs = 0;
-    for (const e of idles.filter((i) => i.stationId === station.id)) {
-      waitingMs += overlapMs(e.startedAt.getTime(), e.endedAt?.getTime() ?? now, from, now);
-    }
-    // Waiting time cannot be more than the connector time left after charging.
-    waitingMs = Math.min(waitingMs, Math.max(0, availableMs - chargingMs));
-    const freeMs = Math.max(0, availableMs - chargingMs - waitingMs);
-
-    const share = (ms) => (availableMs > 0 ? round1((ms / availableMs) * 100) : null);
-    const finished = stationSessions.filter((s) => s.stoppedAt != null);
-    const averageMinutes = finished.length
-      ? round1(finished.reduce((sum, s) => sum + (s.stoppedAt - s.startedAt) / 60_000, 0) / finished.length)
-      : null;
-
-    return {
-      stationId: station.id,
-      stationName: station.name,
-      connectors,
-      sessions: stationSessions.length,
-      averageSessionMinutes: averageMinutes,
-      chargingHours: round1(chargingMs / HOUR_MS),
-      waitingHours: round1(waitingMs / HOUR_MS),
-      freeHours: round1(freeMs / HOUR_MS),
-      chargingPercent: share(chargingMs),
-      waitingPercent: share(waitingMs),
-      freePercent: share(freeMs),
-    };
-  });
-
-  res.json({ days, windowHours: round1(windowMs / HOUR_MS), rows });
+  res.json(await usageReport(days));
 });

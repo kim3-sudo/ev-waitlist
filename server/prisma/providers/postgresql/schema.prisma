@@ -140,6 +140,9 @@ model Settings {
   // False until the first-run setup wizard (first charge point + branding)
   // is completed or skipped.
   setupCompleted     Boolean  @default(false)
+  // JSON: { emails: [], phones: [], contactFormUrl: "" } -- the help details the
+  // "Help" tab shows drivers. Set on the About page. Null means none given yet.
+  helpContacts       String?
   updatedAt          DateTime @updatedAt
 }
 
@@ -209,6 +212,8 @@ model Station {
   country           String?
   hours             String?
   amenities         String?
+  // Optional notes an admin writes for drivers (e.g. where the charger is). Shown in the waitlist's Help tab.
+  tips              String?
   // What the charge point reported when it booted (BootNotification) and since then.
   serialNumber      String?
   firmwareVersion   String?

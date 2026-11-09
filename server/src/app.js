@@ -20,6 +20,7 @@ import { adminSettingsRouter } from './routes/admin.settings.routes.js';
 import { adminTemplatesRouter } from './routes/admin.templates.routes.js';
 import { adminReportsRouter } from './routes/admin.reports.routes.js';
 import { adminUsageRouter } from './routes/admin.usage.routes.js';
+import { adminDashboardRouter } from './routes/admin.dashboard.routes.js';
 import { adminComplaintsRouter } from './routes/admin.complaints.routes.js';
 import { adminUsersRouter } from './routes/admin.users.routes.js';
 import { adminSamlRouter } from './routes/admin.saml.routes.js';
@@ -29,6 +30,7 @@ import { adminPaymentsRouter } from './routes/admin.payments.routes.js';
 import { adminPriceRulesRouter } from './routes/admin.priceRules.routes.js';
 import { adminAlertsRouter } from './routes/admin.alerts.routes.js';
 import { noticesRouter } from './routes/notices.routes.js';
+import { pricingRouter } from './routes/pricing.routes.js';
 import { payRouter } from './routes/pay.routes.js';
 import { stripeWebhookHandler } from './routes/stripeWebhook.routes.js';
 import { squareWebhookHandler } from './routes/squareWebhook.routes.js';
@@ -72,6 +74,7 @@ export function createApp() {
   // The charger locator across all sites (list, by site, and map points).
   app.use('/api/locator', locatorRouter);
   app.use('/api/notices', noticesRouter);
+  app.use('/api/pricing', pricingRouter);
   app.use('/api/waitlist', waitlistRouter);
   // The public REST API. Its routes authenticate with API keys, not admin sessions.
   app.use('/api/v1', apiV1Router);
@@ -81,6 +84,7 @@ export function createApp() {
   app.use('/api/admin/stations', requireAdmin, requireReadOrManage('stations.view', 'stations.manage'), adminStationsRouter);
   // Commands to charge points. Its own prefix, so viewers who can see stations are not blocked by it.
   app.use('/api/admin/station-commands', requireAdmin, requirePermission('stations.control'), adminStationCommandsRouter);
+  app.use('/api/admin/dashboard', requireAdmin, requireReadOrManage('stations.view', 'stations.manage'), adminDashboardRouter);
   app.use('/api/admin/zones', requireAdmin, requireReadOrManage('zones.view', 'zones.manage'), adminZonesRouter);
   // The site's own pin and address, and address lookup for the pin picker.
   app.use('/api/admin/locator', requireAdmin, requireReadOrManage('stations.view', 'stations.manage'), adminLocatorRouter);
@@ -95,6 +99,7 @@ export function createApp() {
   sitePublicRouter.use('/zones', zonesRouter);
   sitePublicRouter.use('/locator', locatorRouter);
   sitePublicRouter.use('/notices', noticesRouter);
+  sitePublicRouter.use('/pricing', pricingRouter);
   sitePublicRouter.use('/waitlist', waitlistRouter);
   sitePublicRouter.use('/settings', settingsRouter);
   sitePublicRouter.use('/pay', payRouter);
