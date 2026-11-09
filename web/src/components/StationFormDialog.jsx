@@ -39,6 +39,9 @@ const emptyForm = {
   connectorCount: 1,
   zoneId: '',
   walletTap: false,
+  smartChargingEnabled: false,
+  firmwareUpdateEnabled: false,
+  localListEnabled: false,
 };
 
 export function StationFormDialog({ station, onClose, onSaved }) {
@@ -63,6 +66,9 @@ export function StationFormDialog({ station, onClose, onSaved }) {
           connectorCount: station.connectors.length || 1,
           zoneId: station.zoneId ?? '',
           walletTap: Boolean(station.walletTap),
+          smartChargingEnabled: Boolean(station.smartChargingEnabled),
+          firmwareUpdateEnabled: Boolean(station.firmwareUpdateEnabled),
+          localListEnabled: Boolean(station.localListEnabled),
         }
       : emptyForm,
   );
@@ -244,6 +250,42 @@ export function StationFormDialog({ station, onClose, onSaved }) {
             <Typography variant="body2" color="text.secondary" sx={{ mt: -2 }}>
               Turn this on only if the charge point's NFC reader can read Apple or Google Wallet passes. Your reader vendor can confirm this.
             </Typography>
+
+            <Divider />
+
+            <Typography variant="subtitle1" fontWeight={600}>
+              Features this charge point supports
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mt: -2 }}>
+              Turn on only what the charge point's hardware and firmware actually support. The server sends a feature's messages only when it is on.
+            </Typography>
+            <FormControlLabel
+              control={
+                <Checkbox
+                  checked={form.smartChargingEnabled}
+                  onChange={(e) => setForm((f) => ({ ...f, smartChargingEnabled: e.target.checked }))}
+                />
+              }
+              label="Smart charging (power limits set by the server)"
+            />
+            <FormControlLabel
+              control={
+                <Checkbox
+                  checked={form.firmwareUpdateEnabled}
+                  onChange={(e) => setForm((f) => ({ ...f, firmwareUpdateEnabled: e.target.checked }))}
+                />
+              }
+              label="Firmware updates and diagnostics logs"
+            />
+            <FormControlLabel
+              control={
+                <Checkbox
+                  checked={form.localListEnabled}
+                  onChange={(e) => setForm((f) => ({ ...f, localListEnabled: e.target.checked }))}
+                />
+              }
+              label="Local authorization list (works while offline)"
+            />
 
             <Divider />
 

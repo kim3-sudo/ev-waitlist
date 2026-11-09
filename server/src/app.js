@@ -3,6 +3,12 @@ import cors from 'cors';
 import { allowedOrigins } from './services/runtimeConfig.js';
 import { adminSystemRouter } from './routes/admin.system.routes.js';
 import { adminIntegrationsRouter } from './routes/admin.integrations.routes.js';
+import { adminWalletRouter } from './routes/admin.wallet.routes.js';
+import { adminFirmwareRouter } from './routes/admin.firmware.routes.js';
+import { deviceFilesRouter } from './routes/deviceFiles.routes.js';
+import { adminBillingRouter, adminTaxRulesRouter } from './routes/admin.billing.routes.js';
+import { publicReceiptsRouter } from './routes/receipts.routes.js';
+import { adminLocalListRouter } from './routes/admin.localList.routes.js';
 import { adminEmailRouter, adminSmsRouter } from './routes/admin.notifications.routes.js';
 import { authRouter } from './auth/auth.routes.js';
 import { samlRouter } from './auth/saml.routes.js';
@@ -89,6 +95,17 @@ export function createApp() {
   app.use('/api/admin/stations', requireAdmin, requireReadOrManage('stations.view', 'stations.manage'), adminStationsRouter);
   // Commands to charge points. Its own prefix, so viewers who can see stations are not blocked by it.
   app.use('/api/admin/station-commands', requireAdmin, requirePermission('stations.control'), adminStationCommandsRouter);
+  // Firmware images and diagnostics logs (local disk). Reads need stations.view; changes need firmware.manage.
+  app.use('/api/admin/firmware', requireAdmin, requireReadOrManage('stations.view', 'firmware.manage'), adminFirmwareRouter);
+  // Addresses charge points use for firmware downloads and diagnostics uploads. No admin login.
+  app.use('/api/device-files', deviceFilesRouter);
+  // Billing: business details, customers, invoices, credit notes and receipts. Reads need payments.view; changes need payments.manage.
+  app.use('/api/admin/billing', requireAdmin, requireReadOrManage('payments.view', 'payments.manage'), adminBillingRouter);
+  app.use('/api/admin/tax-rules', requireAdmin, requireReadOrManage('payments.view', 'payments.manage'), adminTaxRulesRouter);
+  // A driver's receipt, by the charge's unguessable token. No admin login.
+  app.use('/api/receipts', publicReceiptsRouter);
+  // The site's local authorization list (ID tags charge points may accept, or refuse, offline).
+  app.use('/api/admin/local-list', requireAdmin, requireReadOrManage('stations.view', 'stations.manage'), adminLocalListRouter);
   app.use('/api/admin/dashboard', requireAdmin, requireReadOrManage('stations.view', 'stations.manage'), adminDashboardRouter);
   app.use('/api/admin/zones', requireAdmin, requireReadOrManage('zones.view', 'zones.manage'), adminZonesRouter);
   // The site's own pin and address, and address lookup for the pin picker.
@@ -127,6 +144,7 @@ export function createApp() {
   app.use('/api/admin/price-rules', requireAdmin, requireReadOrManage('payments.view', 'payments.manage'), adminPriceRulesRouter);
   app.use('/api/admin/alerts', requirePermission('alerts.manage'), adminAlertsRouter);
   app.use('/api/admin/integrations', requirePermission('integrations.manage'), adminIntegrationsRouter);
+  app.use('/api/admin/wallet', requirePermission('wallet.manage'), adminWalletRouter);
   app.use('/api/admin/email', requirePermission('integrations.manage'), adminEmailRouter);
   app.use('/api/admin/sms', requirePermission('integrations.manage'), adminSmsRouter);
   app.use('/api/admin/system', requirePermission('system.manage'), adminSystemRouter);

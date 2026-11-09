@@ -43,6 +43,8 @@ if (secrets.generated.length) {
 
 export const config = {
   port: Number(process.env.PORT ?? 4000),
+  // Local data folder (database, generated secrets, stored files).
+  dataDir: dataDirToUse(),
   // Signs login sessions.
   jwtSecret: secrets.jwtSecret,
   // Encrypts secret values stored in the database. Must stay the same across

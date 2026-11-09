@@ -56,6 +56,21 @@ const SECTIONS = [
     ],
   },
   {
+    title: 'Wallet passes',
+    items: [{ label: 'Wallet passes', path: '/admin/wallet', permission: 'wallet.manage' }],
+  },
+  {
+    title: 'Charge point features',
+    items: [
+      { label: 'Firmware and diagnostics', path: '/admin/firmware', permission: 'stations.view' },
+      { label: 'Local authorization list', path: '/admin/local-list', permission: 'stations.view' },
+    ],
+  },
+  {
+    title: 'Billing',
+    items: [{ label: 'Billing, tax and invoices', path: '/admin/billing', permission: 'payments.view' }],
+  },
+  {
     title: 'Roaming',
     items: [{ label: 'Roaming and partners', path: '/admin/roaming', permission: 'roaming.manage' }],
   },

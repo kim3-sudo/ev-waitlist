@@ -32,6 +32,10 @@ import { AdminAlertsPage } from './pages/AdminAlertsPage.jsx';
 import { AdminServiceAccountsPage } from './pages/AdminServiceAccountsPage.jsx';
 import { AdminAuditPage } from './pages/AdminAuditPage.jsx';
 import { AdminIntegrationsPage } from './pages/AdminIntegrationsPage.jsx';
+import { AdminWalletPage } from './pages/AdminWalletPage.jsx';
+import { AdminFirmwarePage } from './pages/AdminFirmwarePage.jsx';
+import { AdminBillingPage } from './pages/AdminBillingPage.jsx';
+import { AdminLocalListPage } from './pages/AdminLocalListPage.jsx';
 import { AdminSystemPage } from './pages/AdminSystemPage.jsx';
 import { PayPage } from './pages/PayPage.jsx';
 import { PayHoldPage } from './pages/PayHoldPage.jsx';
@@ -263,6 +267,38 @@ export default function App() {
             element={
               <PermissionRoute permission="integrations.manage">
                 <AdminSmsPage />
+              </PermissionRoute>
+            }
+          />
+          <Route
+            path="wallet"
+            element={
+              <PermissionRoute permission="wallet.manage">
+                <AdminWalletPage />
+              </PermissionRoute>
+            }
+          />
+          <Route
+            path="firmware"
+            element={
+              <PermissionRoute permission="stations.view">
+                <AdminFirmwarePage />
+              </PermissionRoute>
+            }
+          />
+          <Route
+            path="local-list"
+            element={
+              <PermissionRoute permission="stations.view">
+                <AdminLocalListPage />
+              </PermissionRoute>
+            }
+          />
+          <Route
+            path="billing"
+            element={
+              <PermissionRoute permission="payments.view">
+                <AdminBillingPage />
               </PermissionRoute>
             }
           />

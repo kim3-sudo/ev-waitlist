@@ -38,6 +38,15 @@ const TENANT_SCOPED_MODELS = new Set([
   'driverVehicle',
   'driverSignInCode',
   'walletCredential',
+  'firmwarePackage',
+  'diagnosticsLog',
+  'taxRule',
+  'billingSettings',
+  'billingCustomer',
+  'invoice',
+  'receipt',
+  'documentCounter',
+  'localListEntry',
 ]);
 
 // Operations that take a `where` (other than the finds, which are matched by prefix).

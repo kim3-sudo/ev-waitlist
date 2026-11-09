@@ -9,6 +9,8 @@ import { checkTransactionEnergy } from './energyCheck.js';
 import { isProviderConfigured } from './providers.js';
 import { settleHoldForTransaction } from './holds.js';
 import { randomBytes } from 'node:crypto';
+import { taxForCharge } from '../tax.js';
+import { issueReceiptForCharge } from '../billing.js';
 
 export function formatMoney(cents, currency) {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(cents / 100);
@@ -45,6 +47,21 @@ export async function createChargeForTransaction(stationId, ocppTransactionId) {
     adjustmentAt,
   });
 
+  // Tax on the price, from the rules that cover this charge point at this time (see services/tax.js).
+  // Exclusive tax is added on top of the price; inclusive tax is already part of it.
+  const billable = result.status === 'PENDING';
+  const tax = billable
+    ? await taxForCharge({
+      stationId,
+      zoneId: tx.station.zoneId,
+      pricingModel: settings.pricingModel,
+      at: tx.stoppedAt,
+      priceCents: result.amountCents,
+    })
+    : { netCents: 0, taxCents: 0, grossCents: 0, lines: [] };
+  // What the driver pays for the whole session, tax included.
+  const grossCents = tax.grossCents;
+
   // Drivers' contact details come from their waitlist entry for this idTag.
   const entry = await prisma.queueEntry.findFirst({
     where: { idTag: tx.idTag },
@@ -53,8 +70,8 @@ export async function createChargeForTransaction(stationId, ocppTransactionId) {
 
   // A card hold placed before the session pays for it first: capture the actual cost,
   // up to the hold. Only the balance is then charged through a payment link.
-  const held = await settleHoldForTransaction(tx.id, result.status === 'PENDING' ? result.amountCents : 0);
-  const balance = Math.max(0, result.amountCents - held.capturedCents);
+  const held = await settleHoldForTransaction(tx.id, billable ? grossCents : 0);
+  const balance = Math.max(0, grossCents - held.capturedCents);
   const status = held.capturedCents > 0 && balance === 0 ? 'PAID' : result.status;
 
   const charge = await prisma.charge.create({
@@ -69,6 +86,9 @@ export async function createChargeForTransaction(stationId, ocppTransactionId) {
       pricingModel: settings.pricingModel,
       currency: settings.currency,
       amountCents: balance,
+      netCents: tax.netCents,
+      taxCents: tax.taxCents,
+      taxJson: tax.lines.length ? JSON.stringify(tax.lines) : null,
       holdCapturedCents: held.capturedCents,
       durationSeconds: result.durationSeconds,
       energyWh: result.energyWh,
@@ -80,10 +100,13 @@ export async function createChargeForTransaction(stationId, ocppTransactionId) {
     },
   });
 
+  if (charge.status === 'PAID') {
+    await issueReceiptForCharge(charge.id).catch((err) => console.error('[billing] receipt not issued:', err.message));
+  }
   if (charge.status === 'PENDING' && settings.provider !== 'NONE' && isProviderConfigured(settings.provider)) {
     if (charge.payerContact || charge.payerSmsNumber) {
       const link = `${siteConfig().webUrl}/pay/${charge.token}`;
-      const cost = formatMoney(result.amountCents, charge.currency);
+      const cost = formatMoney(grossCents, charge.currency);
       const message = held.capturedCents > 0
         ? await renderMessage('PAYMENT_DUE_AFTER_HOLD', {
           station: tx.station.name,
@@ -106,7 +129,9 @@ export async function markChargePaid(chargeId, { provider, providerRef }) {
     where: { id: chargeId, status: 'PENDING' },
     data: { status: 'PAID', paidAt: new Date(), provider, providerRef },
   });
-  return count === 1;
+  if (count !== 1) return false;
+  await issueReceiptForCharge(chargeId).catch((err) => console.error('[billing] receipt not issued:', err.message));
+  return true;
 }
 
 // The public, unguessable token is the only way to reach a charge from outside.

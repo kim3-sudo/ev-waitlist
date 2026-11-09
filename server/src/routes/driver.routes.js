@@ -4,6 +4,10 @@ import { prisma, rawPrisma } from '../db.js';
 import { requireDriver } from '../auth/auth.middleware.js';
 import { DRIVER_ROLE } from '../auth/permissions.js';
 import { currentTenantId } from '../tenancy/context.js';
+import { ensureCredential } from '../services/wallet/credentialService.js';
+import { appleCheck, googleCredentials, walletStatus } from '../services/wallet/walletSettings.js';
+import { buildPkpass } from '../services/wallet/applePass.js';
+import { googleSaveUrl } from '../services/wallet/googlePass.js';
 import { siteConfig } from '../services/runtimeConfig.js';
 import { emailProblem } from '../services/channels/email.js';
 import { looksLikeEmail } from '../services/contact.js';
@@ -203,4 +207,38 @@ driverRouter.delete('/vehicles/:id', requireDriver, async (req, res) => {
   const { count } = await prisma.driverVehicle.deleteMany({ where: { id: req.params.id, ownerId: req.admin.sub } });
   if (!count) return res.status(404).json({ error: 'Vehicle not found' });
   res.json({ ok: true });
+});
+
+// Wallet passes. Which platforms the site has set up, so the account page knows what to offer.
+driverRouter.get('/wallet', requireDriver, (req, res) => {
+  const status = walletStatus(siteConfig().wallet);
+  res.json({ apple: status.apple.ready, google: status.google.ready });
+});
+
+// The driver's Apple Wallet pass. Asking for it issues the driver's tag the first time.
+driverRouter.get('/wallet/apple', requireDriver, async (req, res) => {
+  const wallet = siteConfig().wallet;
+  if (!appleCheck(wallet.apple).ready) {
+    return res.status(404).json({ error: 'Apple Wallet passes are not set up for this site.' });
+  }
+  const credential = await ensureCredential(req.admin.sub);
+  const pass = buildPkpass(wallet.apple, { serial: credential.idTag, design: wallet.design });
+  res.set('Content-Type', 'application/vnd.apple.pkpass');
+  res.set('Content-Disposition', 'attachment; filename="charging-pass.pkpass"');
+  res.send(pass);
+});
+
+// The link that adds the driver's Google Wallet pass. The page opens it on the phone.
+driverRouter.get('/wallet/google', requireDriver, async (req, res) => {
+  const config = siteConfig();
+  const credentials = googleCredentials(config.wallet.google);
+  if (!credentials) return res.status(404).json({ error: 'Google Wallet passes are not set up for this site.' });
+  const credential = await ensureCredential(req.admin.sub);
+  let origin = '';
+  try {
+    origin = new URL(config.webUrl).origin;
+  } catch {
+    origin = '';
+  }
+  res.json({ url: googleSaveUrl(credentials, credential.idTag, { origin, design: config.wallet.design }) });
 });

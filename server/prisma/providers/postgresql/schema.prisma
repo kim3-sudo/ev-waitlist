@@ -92,6 +92,15 @@ model Tenant {
   apiKeys               ApiKey[]
   providerOutages       ProviderOutage[]
   auditEvents           AuditEvent[]
+  localListEntries      LocalListEntry[]
+  firmwarePackages      FirmwarePackage[]
+  diagnosticsLogs       DiagnosticsLog[]
+  taxRules              TaxRule[]
+  billingSettings       BillingSettings?
+  billingCustomers      BillingCustomer[]
+  invoices              Invoice[]
+  receipts              Receipt[]
+  documentCounters      DocumentCounter[]
 }
 
 model Admin {
@@ -219,6 +228,12 @@ model Station {
   tenantId          String
   // Whether this charge point has an NFC reader that accepts wallet passes (see services/wallet).
   walletTap         Boolean   @default(false)
+  // Features this charge point supports, chosen by the admin when the charge point is set up.
+  // The server sends a feature's messages only when its flag is on, so hardware that lacks a
+  // feature never receives a message it cannot answer.
+  smartChargingEnabled  Boolean @default(false)
+  firmwareUpdateEnabled Boolean @default(false)
+  localListEnabled      Boolean @default(false)
   // OCPP "identity" -- the charge point ID used in the websocket URL
   // (ws://host:port/ocpp/<identity>) and in every OCPP message exchange.
   identity          String    @unique
@@ -273,6 +288,7 @@ model Station {
   charges               Charge[]
   alerts                Alert[]
   priceRules            PriceRule[]
+  diagnosticsLogs       DiagnosticsLog[]
 
   @@index([tenantId])
 }
@@ -405,6 +421,8 @@ model Transaction {
   connectorId       Int
   idTag             String
   ocppTransactionId Int
+  // The transaction ID a charge point chose under OCPP 2.0.1 (text). Null for OCPP 1.6 sessions.
+  ocppTransactionRef String?
   meterStart        Int?
   meterStop         Int?
   startedAt         DateTime  @default(now())
@@ -653,7 +671,13 @@ model Charge {
   payerSmsNumber    String?
   pricingModel      String
   currency          String
+  // The amount still to pay (after any hold capture): the session total minus holdCapturedCents.
   amountCents       Int
+  // The whole session before tax, and the tax on it (see services/tax.js). netCents is null for charges made before tax existed.
+  netCents          Int?
+  taxCents          Int       @default(0)
+  // Each tax rule that applied, as JSON (see services/tax.js).
+  taxJson           String?
   durationSeconds   Int
   energyWh          Int?
   // Where energyWh came from: METER_VALUES (the charger's readings, checked against the
@@ -941,4 +965,202 @@ model DriverSignInCode {
   createdAt DateTime @default(now())
 
   @@index([tenantId, email])
+}
+
+// A firmware image an admin uploads. The file is kept on local disk under the data
+// directory; the database holds its name, size and checksum.
+model FirmwarePackage {
+  id          String   @id @default(cuid())
+  tenant      Tenant   @relation(fields: [tenantId], references: [id])
+  tenantId    String
+  name        String
+  version     String
+  vendor      String?
+  model       String?
+  notes       String?
+  fileName    String
+  // Path of the file relative to the firmware folder under the data directory.
+  storageKey  String   @unique
+  sizeBytes   Int
+  sha256      String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([tenantId])
+}
+
+// A diagnostics log requested from a charge point. The charge point uploads the file to a
+// one-time address given to it, so the upload needs no admin login. Only a hash of the
+// upload token is stored.
+model DiagnosticsLog {
+  id           String    @id @default(cuid())
+  tenant       Tenant    @relation(fields: [tenantId], references: [id])
+  tenantId     String
+  station      Station   @relation(fields: [stationId], references: [id], onDelete: Cascade)
+  stationId    String
+  // REQUESTED (waiting for the upload), UPLOADED, or FAILED (the charge point reported a failure).
+  status       String    @default("REQUESTED")
+  tokenHash    String    @unique
+  requestedAt  DateTime  @default(now())
+  expiresAt    DateTime
+  uploadedAt   DateTime?
+  fileName     String?
+  // Path relative to the diagnostics folder under the data directory.
+  storageKey   String?   @unique
+  sizeBytes    Int?
+  sha256       String?
+
+  @@index([tenantId])
+  @@index([stationId])
+}
+
+// The business details printed on invoices and receipts, and the document numbering.
+model BillingSettings {
+  id               String   @id @default(cuid())
+  tenant           Tenant   @relation(fields: [tenantId], references: [id])
+  tenantId         String   @unique
+  legalName        String?
+  // VAT or tax registration number, printed on every document.
+  taxId            String?
+  address          String?
+  invoicePrefix    String   @default("INV")
+  receiptPrefix    String   @default("RCP")
+  // Days from issue to due date for invoices.
+  paymentTermsDays Int      @default(30)
+  // Text printed at the foot of every document.
+  footerText       String?
+  updatedAt        DateTime @updatedAt
+}
+
+// A tax the admin sets up. See services/tax.js for how rules combine.
+model TaxRule {
+  id              String    @id @default(cuid())
+  tenant          Tenant    @relation(fields: [tenantId], references: [id])
+  tenantId        String
+  name            String
+  // Free text naming the jurisdiction, shown on documents, for example "Ontario HST".
+  jurisdiction    String?
+  // Rate in basis points: 2000 is 20.00%.
+  rateBasisPoints Int
+  // EXCLUSIVE: added on top of the price. INCLUSIVE: already in the price.
+  mode            String    @default("EXCLUSIVE")
+  // ALL, ENERGY (energy-priced sessions) or TIME (time-priced sessions).
+  appliesTo       String    @default("ALL")
+  // SITE, ZONE or STATION. zoneId or stationId names the zone or charge point for the narrower scopes.
+  scope           String    @default("SITE")
+  zoneId          String?
+  stationId       String?
+  validFrom       DateTime?
+  validUntil      DateTime?
+  priority        Int       @default(100)
+  enabled         Boolean   @default(true)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([tenantId])
+}
+
+// A business that is invoiced (B2B). Consumer receipts need no customer record.
+model BillingCustomer {
+  id        String    @id @default(cuid())
+  tenant    Tenant    @relation(fields: [tenantId], references: [id])
+  tenantId  String
+  name      String
+  taxId     String?
+  email     String?
+  address   String?
+  notes     String?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  invoices  Invoice[]
+
+  @@index([tenantId])
+}
+
+// A B2B invoice, or a credit note (kind CREDIT_NOTE, with negative lines) that corrects one.
+model Invoice {
+  id               String           @id @default(cuid())
+  tenant           Tenant           @relation(fields: [tenantId], references: [id])
+  tenantId         String
+  number           String
+  kind             String           @default("INVOICE")
+  // ISSUED, or PAID once the admin marks it paid.
+  status           String           @default("ISSUED")
+  customer         BillingCustomer  @relation(fields: [customerId], references: [id])
+  customerId       String
+  currency         String
+  netCents         Int
+  taxCents         Int
+  totalCents       Int
+  // The supplier and customer details as they were when the invoice was issued (JSON).
+  supplierSnapshot String
+  customerSnapshot String
+  issuedAt         DateTime         @default(now())
+  dueAt            DateTime?
+  paidAt           DateTime?
+  // For a credit note: the invoice it corrects.
+  creditsInvoiceId String?
+  lines            InvoiceLine[]
+
+  @@unique([tenantId, number])
+  @@index([customerId])
+}
+
+model InvoiceLine {
+  id          String  @id @default(cuid())
+  invoice     Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  invoiceId   String
+  description String
+  // The charge this line bills. A charge is invoiced at most once.
+  chargeId    String? @unique
+  netCents    Int
+  taxCents    Int
+  totalCents  Int
+  taxJson     String?
+
+  @@index([invoiceId])
+}
+
+// A consumer receipt, issued once a charge is paid.
+model Receipt {
+  id         String   @id @default(cuid())
+  tenant     Tenant   @relation(fields: [tenantId], references: [id])
+  tenantId   String
+  number     String
+  chargeId   String   @unique
+  currency   String
+  netCents   Int
+  taxCents   Int
+  totalCents Int
+  taxJson    String?
+  payerName  String?
+  issuedAt   DateTime @default(now())
+
+  @@unique([tenantId, number])
+}
+
+// The next number to use for each kind of document, per site. Numbers never repeat and never skip.
+model DocumentCounter {
+  id       String @id @default(cuid())
+  tenant   Tenant @relation(fields: [tenantId], references: [id])
+  tenantId String
+  kind     String
+  next     Int    @default(1)
+
+  @@unique([tenantId, kind])
+}
+
+// An ID tag the charge points keep in their local authorization list, so they can decide offline.
+// ACCEPTED tags are let through without a server round trip; BLOCKED tags are refused everywhere.
+model LocalListEntry {
+  id        String   @id @default(cuid())
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  tenantId  String
+  idTag     String
+  status    String   @default("ACCEPTED")
+  note      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tenantId, idTag])
 }

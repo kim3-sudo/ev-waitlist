@@ -72,7 +72,7 @@ export function HelpPage() {
                   selected={article.id === current.id}
                   aria-current={article.id === current.id ? 'page' : undefined}
                   onClick={() => navigate(`/help/${article.id}`)}
-                  sx={{ py: 1 }}
+                  sx={{ py: 1, pl: 4 }}
                 >
                   <ListItemText primary={article.title} slotProps={{ primary: { variant: 'body2' } }} />
                 </ListItemButton>

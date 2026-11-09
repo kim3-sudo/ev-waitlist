@@ -67,7 +67,7 @@ describe('roaming switch', () => {
     const changed = await request(app)
       .put('/api/admin/roaming')
       .set(bearer(adminToken))
-      .send({ warningExtra: 'Our car park closes at 22:00.' });
+      .send({ warningExtra: 'This parking lot closes at 22:00.' });
     assert.equal(changed.status, 200);
     assert.equal(changed.body.enabled, false);
     assert.equal((await siteRow()).roamingTermsAcknowledgedAt, null);

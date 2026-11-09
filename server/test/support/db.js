@@ -8,6 +8,14 @@ import { clearAuditSettingsCache } from '../../src/audit/settings.js';
 // Children first so this works regardless of whether SQLite FK cascades are active.
 export async function resetDb() {
   await prisma.$transaction([
+    prisma.receipt.deleteMany(),
+    prisma.localListEntry.deleteMany(),
+    prisma.invoiceLine.deleteMany(),
+    prisma.invoice.deleteMany(),
+    prisma.billingCustomer.deleteMany(),
+    prisma.taxRule.deleteMany(),
+    prisma.billingSettings.deleteMany(),
+    prisma.documentCounter.deleteMany(),
     prisma.auditEvent.deleteMany(),
     prisma.auditSettings.deleteMany(),
     prisma.apiKey.deleteMany(),
@@ -27,6 +35,8 @@ export async function resetDb() {
     prisma.reservation.deleteMany(),
     prisma.transaction.deleteMany(),
     prisma.queueEntry.deleteMany(),
+    prisma.diagnosticsLog.deleteMany(),
+    prisma.firmwarePackage.deleteMany(),
     prisma.connector.deleteMany(),
     prisma.station.deleteMany(),
     prisma.zone.deleteMany(),

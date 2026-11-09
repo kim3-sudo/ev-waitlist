@@ -33,6 +33,9 @@ function serialize(station) {
     zoneId: station.zoneId,
     zoneName: station.zone?.name ?? null,
     walletTap: Boolean(station.walletTap),
+    smartChargingEnabled: Boolean(station.smartChargingEnabled),
+    firmwareUpdateEnabled: Boolean(station.firmwareUpdateEnabled),
+    localListEnabled: Boolean(station.localListEnabled),
     online: registry.isConnected(station.identity),
     lastSeenAt: station.lastSeenAt ?? null,
     offlineSince: station.offlineSince ?? null,
@@ -370,6 +373,9 @@ adminStationsRouter.get('/:id/status', async (req, res) => {
     lastSeenAt: station.lastSeenAt,
     offlineSince: station.offlineSince,
     vendor: station.vendor,
+    smartChargingEnabled: Boolean(station.smartChargingEnabled),
+    firmwareUpdateEnabled: Boolean(station.firmwareUpdateEnabled),
+    localListEnabled: Boolean(station.localListEnabled),
     model: station.model,
     serialNumber: station.serialNumber,
     firmwareVersion: station.firmwareVersion,
@@ -396,6 +402,20 @@ function walletTapProblem(value) {
   return { value };
 }
 
+// The OCPP features an admin enables for a charge point. Each is on only when the admin says the
+// hardware supports it. Only true or false is accepted; undefined leaves the stored value alone.
+export const FEATURE_FLAGS = ['smartChargingEnabled', 'firmwareUpdateEnabled', 'localListEnabled'];
+
+export function featureFlagsProblem(body) {
+  const value = {};
+  for (const key of FEATURE_FLAGS) {
+    if (body?.[key] === undefined) continue;
+    if (typeof body[key] !== 'boolean') return { error: `${key} must be true or false` };
+    value[key] = body[key];
+  }
+  return { value };
+}
+
 adminStationsRouter.post('/', async (req, res) => {
   const { identity, name, vendor, model, location, connectorCount, zoneId, latitude, longitude, connectors } = req.body ?? {};
   const coordsProblem = coordinatesProblem(latitude, longitude);
@@ -408,6 +428,8 @@ adminStationsRouter.post('/', async (req, res) => {
   if (parking.error) return res.status(400).json({ error: parking.error });
   const wallet = walletTapProblem(req.body?.walletTap);
   if (wallet.error) return res.status(400).json({ error: wallet.error });
+  const features = featureFlagsProblem(req.body);
+  if (features.error) return res.status(400).json({ error: features.error });
   const newCount = Math.max(0, Number(connectorCount) || 1);
   const detailsProblem = connectorDetailsError(connectors, new Set(Array.from({ length: newCount }, (_, i) => i + 1)));
   if (detailsProblem) return res.status(400).json({ error: detailsProblem });
@@ -439,6 +461,7 @@ adminStationsRouter.post('/', async (req, res) => {
       tips: tips.value,
       parkingKeys: parking.value ?? null,
       walletTap: wallet.value ?? false,
+      ...features.value,
     },
   });
 
@@ -465,6 +488,8 @@ adminStationsRouter.put('/:id', async (req, res) => {
   if (parking.error) return res.status(400).json({ error: parking.error });
   const wallet = walletTapProblem(req.body?.walletTap);
   if (wallet.error) return res.status(400).json({ error: wallet.error });
+  const features = featureFlagsProblem(req.body);
+  if (features.error) return res.status(400).json({ error: features.error });
 
   const station = await prisma.station.findUnique({ where: { id: req.params.id } });
   if (!station) return res.status(404).json({ error: 'Station not found' });
@@ -506,6 +531,7 @@ adminStationsRouter.put('/:id', async (req, res) => {
       ...(parking.value !== undefined && { parkingKeys: parking.value }),
       // Left alone when the request does not send it.
       ...(wallet.value !== undefined && { walletTap: wallet.value }),
+      ...features.value,
     },
   });
 

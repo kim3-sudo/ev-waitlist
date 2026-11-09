@@ -9,6 +9,76 @@ import { VehicleDialog } from '../components/driver/VehicleDialog.jsx';
 import { standardName } from '../components/locator/locatorFormat.js';
 import { sitePath } from '../sitePaths.js';
 
+// Adds the driver's pass to Apple Wallet or Google Wallet. Only the platforms the site has
+// set up are offered. The pass is fetched with the driver's sign-in, then handed to the phone.
+function WalletPassCard({ onError }) {
+  const [offered, setOffered] = useState(null);
+  const [busy, setBusy] = useState('');
+
+  useEffect(() => {
+    api
+      .get('/api/driver/wallet')
+      .then(({ data }) => setOffered(data))
+      .catch(() => setOffered({ apple: false, google: false }));
+  }, []);
+
+  if (!offered || (!offered.apple && !offered.google)) return null;
+
+  async function addApple() {
+    setBusy('apple');
+    try {
+      const { data } = await api.get('/api/driver/wallet/apple', { responseType: 'blob' });
+      const url = URL.createObjectURL(new Blob([data], { type: 'application/vnd.apple.pkpass' }));
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'charging-pass.pkpass';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
+    } catch {
+      onError('Your Apple Wallet pass could not be made. Try again in a moment.');
+    } finally {
+      setBusy('');
+    }
+  }
+
+  async function addGoogle() {
+    setBusy('google');
+    try {
+      const { data } = await api.get('/api/driver/wallet/google');
+      window.location.href = data.url;
+    } catch {
+      onError('Your Google Wallet pass could not be made. Try again in a moment.');
+      setBusy('');
+    }
+  }
+
+  return (
+    <Paper variant="outlined" sx={{ p: 3 }}>
+      <Typography variant="h6" gutterBottom>
+        Wallet pass
+      </Typography>
+      <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+        Add a pass to your phone's wallet. When it is your turn at a charge point, tap the phone on the reader to start
+        charging. Open the wallet on this phone to add it.
+      </Typography>
+      <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5}>
+        {offered.apple && (
+          <Button variant="outlined" onClick={addApple} disabled={busy !== ''}>
+            {busy === 'apple' ? 'Making your pass…' : 'Add to Apple Wallet'}
+          </Button>
+        )}
+        {offered.google && (
+          <Button variant="outlined" onClick={addGoogle} disabled={busy !== ''}>
+            {busy === 'google' ? 'Opening Google Wallet…' : 'Save to Google Wallet'}
+          </Button>
+        )}
+      </Stack>
+    </Paper>
+  );
+}
+
 // The driver's own account: their details, password, and vehicles with the plugs each can use.
 export function DriverAccountPage() {
   const { logout } = useAuth();
@@ -69,6 +139,8 @@ export function DriverAccountPage() {
         <Paper variant="outlined" sx={{ p: 3 }}>
           <DetailsForm account={account} onSaved={(text) => { setMessage({ type: 'success', text }); load(); }} onError={(text) => setMessage({ type: 'error', text })} />
         </Paper>
+
+        <WalletPassCard onError={(text) => setMessage({ type: 'error', text })} />
 
         <Paper variant="outlined" sx={{ p: 3 }}>
           <PasswordForm hasPassword={account.hasPassword} onSaved={() => setMessage({ type: 'success', text: 'Your password is saved.' })} onError={(text) => setMessage({ type: 'error', text })} />

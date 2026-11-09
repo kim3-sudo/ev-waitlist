@@ -5,6 +5,8 @@ import { refreshConfiguration } from '../services/stationConfigure.js';
 import { registry } from '../services/stationRegistry.js';
 import { nextReservationId } from '../services/reservationIdCounter.js';
 import { releaseReservation, onConnectorFreed } from '../services/dispatcher.js';
+import { DIAGNOSTICS_UPLOAD_HOURS, newUploadToken, publicBase, signFirmwareLink } from '../services/fileStore.js';
+import { sendLocalList } from '../services/localList.js';
 
 // Commands an admin sends to a charge point. Mounted behind stations.control.
 // Every command the charge point answers is recorded in the station's history.
@@ -331,4 +333,135 @@ adminStationCommandsRouter.delete('/:stationId/holds/:reservationId', async (req
   // The connector may now be offered to someone waiting.
   await onConnectorFreed(station.id, hold.connectorId).catch((err) => console.error('Dispatch after release failed:', err));
   res.json({ message: 'Hold released.' });
+});
+
+// Firmware and diagnostics. Each one is sent only when the admin has turned firmware support on for
+// this charge point, so hardware without the Firmware Management profile never gets the message.
+function featureOff(res, what) {
+  return res.status(409).json({
+    error: `${what} is turned off for this charge point. Turn it on in the charge point's settings first.`,
+  });
+}
+
+// Sends the charge point a firmware image to download and install (UpdateFirmware).
+adminStationCommandsRouter.post('/:stationId/update-firmware', async (req, res) => {
+  const station = await loadStation(req, res);
+  if (!station) return;
+  if (!station.firmwareUpdateEnabled) return featureOff(res, 'Firmware updates');
+  const pkg = await prisma.firmwarePackage.findUnique({ where: { id: String(req.body?.firmwarePackageId ?? '') } });
+  if (!pkg) return res.status(404).json({ error: 'Firmware not found' });
+  const base = publicBase();
+  if (!base) return res.status(409).json({ error: 'Set the site\'s public address first, so the charge point can reach the file.' });
+
+  const retrieveDate = req.body?.retrieveDate ? new Date(req.body.retrieveDate) : new Date();
+  if (Number.isNaN(retrieveDate.getTime())) return res.status(400).json({ error: 'retrieveDate must be a valid date' });
+  const { expiresAtSeconds, signature } = signFirmwareLink(pkg.id);
+  const location = `${base}/api/device-files/firmware/${pkg.id}/${expiresAtSeconds}/${signature}`;
+
+  const outcome = await callStation(station, 'UpdateFirmware', {
+    location,
+    retrieveDate: retrieveDate.toISOString(),
+    retries: 3,
+    retryInterval: 300,
+  });
+  if (!outcome.ok) return failure(res, outcome);
+  await logCommand(station, actorOf(req), `Asked the charge point to install firmware ${pkg.version} (${pkg.name}).`);
+  res.status(202).json({ message: `Firmware ${pkg.version} requested. The charge point downloads it and reports progress.` });
+});
+
+// Asks the charge point to upload a diagnostics log to a one-time address (GetDiagnostics).
+adminStationCommandsRouter.post('/:stationId/get-diagnostics', async (req, res) => {
+  const station = await loadStation(req, res);
+  if (!station) return;
+  if (!station.firmwareUpdateEnabled) return featureOff(res, 'Diagnostics');
+  const base = publicBase();
+  if (!base) return res.status(409).json({ error: 'Set the site\'s public address first, so the charge point can reach the upload address.' });
+
+  const { token, tokenHash } = newUploadToken();
+  const expiresAt = new Date(Date.now() + DIAGNOSTICS_UPLOAD_HOURS * 3600 * 1000);
+  const log = await prisma.diagnosticsLog.create({
+    data: { stationId: station.id, tokenHash, expiresAt },
+  });
+  const location = `${base}/api/device-files/diagnostics/${token}`;
+
+  const outcome = await callStation(station, 'GetDiagnostics', {
+    location,
+    retries: 3,
+    retryInterval: 300,
+    ...(req.body?.startTime && { startTime: new Date(req.body.startTime).toISOString() }),
+    ...(req.body?.stopTime && { stopTime: new Date(req.body.stopTime).toISOString() }),
+  });
+  if (!outcome.ok) {
+    await prisma.diagnosticsLog.update({ where: { id: log.id }, data: { status: 'FAILED' } });
+    return failure(res, outcome);
+  }
+  await logCommand(station, actorOf(req), 'Asked the charge point for a diagnostics log.');
+  res.status(202).json({ id: log.id, message: 'Diagnostics requested. The log appears in the list when the charge point uploads it.' });
+});
+
+// Smart charging: a power limit set by the server. The limit for the whole charge point is
+// connector 0; a single connector has its own. Sent only when the admin turned smart charging on.
+const chargingProfileId = (connectorId) => 100 + connectorId;
+
+adminStationCommandsRouter.post('/:stationId/charging-limit', async (req, res) => {
+  const station = await loadStation(req, res);
+  if (!station) return;
+  if (!station.smartChargingEnabled) return featureOff(res, 'Smart charging');
+  const connectorId = Number(req.body?.connectorId ?? 0);
+  if (!Number.isInteger(connectorId) || connectorId < 0) return res.status(400).json({ error: 'connectorId must be 0 (the whole charge point) or a connector number' });
+  if (connectorId > 0 && !connectorOf(station, connectorId)) return res.status(404).json({ error: 'Connector not found' });
+  const limitAmps = Number(req.body?.limitAmps);
+  if (!Number.isInteger(limitAmps) || limitAmps < 1 || limitAmps > 1000) {
+    return res.status(400).json({ error: 'limitAmps must be a whole number from 1 to 1000' });
+  }
+
+  const outcome = await callStation(station, 'SetChargingProfile', {
+    connectorId,
+    csChargingProfiles: {
+      chargingProfileId: chargingProfileId(connectorId),
+      stackLevel: 0,
+      chargingProfilePurpose: connectorId === 0 ? 'ChargePointMaxProfile' : 'TxDefaultProfile',
+      chargingProfileKind: 'Absolute',
+      chargingSchedule: {
+        chargingRateUnit: 'A',
+        chargingSchedulePeriod: [{ startPeriod: 0, limit: limitAmps }],
+      },
+    },
+  });
+  if (!outcome.ok) return failure(res, outcome);
+  if (outcome.result?.status !== 'Accepted') {
+    return res.status(409).json({ error: `The charge point did not accept the limit (${outcome.result?.status ?? 'no answer'}).` });
+  }
+  const where = connectorId === 0 ? 'the charge point' : `connector ${connectorId}`;
+  await logCommand(station, actorOf(req), `Limited ${where} to ${limitAmps} A.`, { connectorId: connectorId || null });
+  res.status(202).json({ message: `${where[0].toUpperCase()}${where.slice(1)} limited to ${limitAmps} A.` });
+});
+
+adminStationCommandsRouter.delete('/:stationId/charging-limit', async (req, res) => {
+  const station = await loadStation(req, res);
+  if (!station) return;
+  if (!station.smartChargingEnabled) return featureOff(res, 'Smart charging');
+  const connectorId = Number(req.query.connectorId ?? 0);
+  if (!Number.isInteger(connectorId) || connectorId < 0) return res.status(400).json({ error: 'connectorId must be 0 or a connector number' });
+  const outcome = await callStation(station, 'ClearChargingProfile', {
+    id: chargingProfileId(connectorId),
+    connectorId,
+    chargingProfilePurpose: connectorId === 0 ? 'ChargePointMaxProfile' : 'TxDefaultProfile',
+  });
+  if (!outcome.ok) return failure(res, outcome);
+  await logCommand(station, actorOf(req), `Removed the power limit on ${connectorId === 0 ? 'the charge point' : `connector ${connectorId}`}.`, { connectorId: connectorId || null });
+  res.json({ message: 'Power limit removed.' });
+});
+
+// Sends the site's local authorization list to this charge point now.
+adminStationCommandsRouter.post('/:stationId/local-list', async (req, res) => {
+  const station = await loadStation(req, res);
+  if (!station) return;
+  if (!station.localListEnabled) return featureOff(res, 'Local list support');
+  const outcome = await sendLocalList(station, actorOf(req));
+  if (!outcome.ok) return failure(res, outcome);
+  if (outcome.result?.status !== 'Accepted') {
+    return res.status(409).json({ error: `The charge point did not accept the list (${outcome.result?.status ?? 'no answer'}).` });
+  }
+  res.status(202).json({ message: 'The local list was sent to the charge point.' });
 });

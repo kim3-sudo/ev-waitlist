@@ -15,6 +15,10 @@ import { storeMeterValues } from '../services/meterService.js';
 import { configureMetering, reapplyAvailability } from '../services/stationConfigure.js';
 import { isManualHoldAuthorized, fulfillManualHold } from '../services/manualHolds.js';
 import { translateIdTag } from '../services/wallet/credentialService.js';
+import { markLatestDiagnosticsFailed } from '../services/diagnosticsLogs.js';
+import { attachOcpp20 } from './ocpp20.js';
+import { OCPP20 } from '../services/ocpp20Commands.js';
+import { isBlockedIdTag } from '../services/localList.js';
 
 // An accepted idTagInfo. When the turn has an end time, it is given as expiryDate so the charge
 // point can drop the tag from its cache once the turn is over.
@@ -46,7 +50,7 @@ import { nextTransactionId } from '../services/transactionIdCounter.js';
 
 export function createCentralSystem() {
   const server = new RPCServer({
-    protocols: ['ocpp1.6'],
+    protocols: ['ocpp1.6', OCPP20],
     strictMode: true,
   });
 
@@ -82,6 +86,21 @@ export function createCentralSystem() {
     enterTenant(tenantId, () =>
       prisma.station.updateMany({ where: { id: stationId }, data: { offlineSince: null } }),
     ).catch((err) => console.error(`[ocpp] connect bookkeeping for ${identity} failed:`, err.message));
+
+    const onDisconnect = () => {
+      registry.remove(identity);
+      enterTenant(tenantId, () =>
+        prisma.station.updateMany({ where: { id: stationId, offlineSince: null }, data: { offlineSince: new Date() } }),
+      ).catch((err) => console.error(`[ocpp] disconnect bookkeeping for ${identity} failed:`, err.message));
+      console.log(`[ocpp] ${identity} disconnected`);
+    };
+    client.on('disconnect', onDisconnect);
+
+    // Charge points that connected with OCPP 2.0.1 have their own handlers (see ocpp20.js).
+    if (client.protocol === OCPP20) {
+      attachOcpp20(client, { handle, stationId, identity, reportFault, later });
+      return;
+    }
 
     handle('BootNotification', async ({ params }) => {
       console.log(`[ocpp] BootNotification from ${identity}:`, params.chargePointVendor, params.chargePointModel);
@@ -165,6 +184,7 @@ export function createCentralSystem() {
     // A wallet pass tag is translated to the driver's waitlist tag first (see services/wallet).
     handle('Authorize', async ({ params: reported }) => {
       const { idTag, expiresAt } = await translateIdTag(stationId, reported.idTag);
+      if (await isBlockedIdTag(idTag)) return { idTagInfo: { status: 'Blocked' } };
       const authorized =
         (await isWaitlistAuthorized(stationId, idTag)) ||
         (await roamingAuthorize(stationId, idTag)).ok ||
@@ -175,6 +195,9 @@ export function createCentralSystem() {
     handle('StartTransaction', async ({ params: reported }) => {
       const { idTag, expiresAt } = await translateIdTag(stationId, reported.idTag);
       const params = { ...reported, idTag };
+      if (await isBlockedIdTag(idTag)) {
+        return { transactionId: 0, idTagInfo: { status: 'Blocked' } };
+      }
       const waitlisted = await isWaitlistAuthorized(stationId, params.idTag);
       const roaming = waitlisted ? { ok: false } : await roamingAuthorize(stationId, params.idTag);
       // An admin's manual hold for this ID tag, when the driver isn't on the waitlist.
@@ -252,6 +275,10 @@ export function createCentralSystem() {
     handle('DiagnosticsStatusNotification', async ({ params }) => {
       await prisma.station.update({ where: { id: stationId }, data: { diagnosticsStatus: params.status } });
       await recordStationEvent(stationId, 'DIAGNOSTICS', params.status);
+      // The charge point gave up on the upload, so the newest open request for this charge point fails.
+      if (params.status === 'UploadFailed') {
+        await markLatestDiagnosticsFailed(stationId);
+      }
       return {};
     });
 
@@ -269,13 +296,6 @@ export function createCentralSystem() {
       throw createRPCError('NotImplemented');
     });
 
-    client.on('disconnect', () => {
-      registry.remove(identity);
-      enterTenant(tenantId, () =>
-        prisma.station.updateMany({ where: { id: stationId, offlineSince: null }, data: { offlineSince: new Date() } }),
-      ).catch((err) => console.error(`[ocpp] disconnect bookkeeping for ${identity} failed:`, err.message));
-      console.log(`[ocpp] ${identity} disconnected`);
-    });
   });
 
   return server;

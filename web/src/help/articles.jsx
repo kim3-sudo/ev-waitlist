@@ -23,7 +23,7 @@ const Para = ({ children }) => (
 );
 
 export const HELP_SECTIONS = [
-  { title: 'Getting started', ids: ['your-role', 'your-profile'] },
+  { title: 'Getting started', ids: ['your-role', 'charge-point-zone-site', 'your-profile'] },
   {
     title: 'Charge points',
     ids: ['view-charge-points', 'add-charge-point', 'connector-power-types', 'test-connection', 'update-charge-point', 'remove-charge-point', 'charge-point-status'],
@@ -34,6 +34,7 @@ export const HELP_SECTIONS = [
   },
   { title: 'Notifications', ids: ['notification-setup', 'driver-text-messages'] },
   { title: 'Payments', ids: ['pricing-and-payments', 'stripe-setup', 'square-setup', 'braintree-setup'] },
+  { title: 'Wallet passes', ids: ['wallet-passes'] },
   { title: 'Roaming (OCPI)', ids: ['roaming-drivers', 'roaming-partners'] },
   { title: 'Privacy', ids: ['privacy-retention'] },
   { title: 'Sites', ids: ['multiple-sites'] },
@@ -61,6 +62,101 @@ export const HELP_ARTICLES = [
         </Para>
         <Alert severity="info">
           Need a different role? Ask an admin to change it for you under Admin, then Users.
+        </Alert>
+      </>
+    ),
+  },
+  {
+    id: 'charge-point-zone-site',
+    title: 'Charge points, zones, and sites',
+    body: (
+      <>
+        <Para>
+          The app organizes your chargers at three levels. Each level holds the one below it: a site holds zones, and a
+          zone holds charge points. A charge point doesn't have to be in a zone, and most operators run a single site.
+        </Para>
+        <Table size="small" sx={{ mb: 3 }}>
+          <TableHead>
+            <TableRow>
+              <TableCell />
+              <TableCell>What it is</TableCell>
+              <TableCell>Waitlist</TableCell>
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            <TableRow>
+              <TableCell>
+                <strong>Charge point</strong>
+              </TableCell>
+              <TableCell>One charger, with its connectors (the plugs drivers use).</TableCell>
+              <TableCell>Its own line, unless it's in a zone.</TableCell>
+            </TableRow>
+            <TableRow>
+              <TableCell>
+                <strong>Zone</strong>
+              </TableCell>
+              <TableCell>A group of charge points that serve the same drivers.</TableCell>
+              <TableCell>One line shared by every charge point in the zone.</TableCell>
+            </TableRow>
+            <TableRow>
+              <TableCell>
+                <strong>Site</strong>
+              </TableCell>
+              <TableCell>A separate operation with its own charge points, zones, branding, and payment keys.</TableCell>
+              <TableCell>Its zones and charge points keep their lines. No line is shared across sites.</TableCell>
+            </TableRow>
+          </TableBody>
+        </Table>
+        <Typography variant="h6" gutterBottom>
+          Charge points
+        </Typography>
+        <Para>
+          A charge point is one physical charger. It has its own identity, status, and connectors. You add and manage
+          each one under <strong>Admin</strong>, then <strong>Charge points</strong>. See{' '}
+          <RouterLink to="/help/add-charge-point">Adding a charge point</RouterLink>.
+        </Para>
+        <Alert severity="info">
+          A single EVSE is a charge point. A DC fast charger dispenser with two handles on it is still a single charge point (with multiple connectors).
+        </Alert>
+        <Typography variant="h6" gutterBottom>
+          Zones
+        </Typography>
+        <Para>
+          Use a zone when several chargers serve the same drivers, such as every bay in a parking lot. Drivers join one
+          line for the zone, and the next person in that line is offered whichever charger in the zone frees up first.
+          A charge point outside any zone keeps a line of its own.
+        </Para>
+        <Para>
+          Create zones under <strong>Admin</strong>, then <strong>Zones</strong>, and assign charge points to them from
+          the charge point form. Moving a charge point to another zone changes which line it shares.
+        </Para>
+        <Alert severity="info">
+          Does your campus have multiple parking lots? Each parking lot is a zone.
+        </Alert>
+        <Typography variant="h6" gutterBottom>
+          Sites
+        </Typography>
+        <Para>
+          A site is a separate operation on the same installation. Each site has its own zones, charge points,
+          waitlist, branding, payment keys, and retention periods. Drivers reach each site through its own address. Only
+          run more than one site if the operations are truly separate. See{' '}
+          <RouterLink to="/help/multiple-sites">Running more than one site</RouterLink>.
+        </Para>
+        <Alert severity="info">
+          Does your organization or CPO have multiple campuses? Each campus might be its own site, if the administrator 
+          and management of charge points falls on different people for each site.
+        </Alert>
+        <Typography variant="h6" gutterBottom>
+          Location
+        </Typography>
+        <Para>
+          A charge point's <strong>location</strong> is a free-text place, such as a parking lot name or street address.
+          It isn't a level of its own. Drivers see it in the charger locator, and an alert set for a location reaches
+          every charge point with that location.
+        </Para>
+        <Alert severity="info">
+          Not sure where a charger belongs? Pick the zone first. Use a new site only for a separate business with its
+          own payments.
         </Alert>
       </>
     ),
@@ -154,10 +250,10 @@ export const HELP_ARTICLES = [
         </Typography>
         <Para>
           If your charger has an NFC reader that can read Apple Wallet or Google Wallet passes, select{' '}
-          <strong>Accepts wallet passes (tap to start)</strong> on the charge point form. Drivers who have added a pass
-          can then tap their phone on the reader to start charging when it is their turn. Leave the box clear if the
-          reader accepts only cards. Your reader vendor can confirm which kind of reader you have, and a reader that
-          cannot read passes will refuse them.
+          <strong>Accepts wallet passes (tap to start)</strong> on the charge point form. Drivers can then tap their
+          phone on the reader to start charging when it's their turn. Leave the box clear if the reader accepts only
+          cards. Your reader vendor can confirm which kind of reader you have, and a reader that cannot read passes will
+          refuse them. Passes must be set up first. See <RouterLink to="/help/wallet-passes">Wallet passes</RouterLink>.
         </Para>
 
         <Typography variant="h6" gutterBottom>
@@ -1179,6 +1275,137 @@ export const HELP_ARTICLES = [
         <Alert severity="info">
           Each site has its own payment webhook addresses. Find them in the operator checklist, under Webhook addresses.
         </Alert>
+      </>
+    ),
+  },
+  {
+    id: 'wallet-passes',
+    title: 'Wallet passes',
+    body: (
+      <>
+        <Para>
+          A wallet pass lets a driver tap their phone on a charge point's reader to start charging. The pass goes in
+          Apple Wallet or Google Wallet. It carries a tag that belongs to that driver only, and it works only when it is
+          their turn on the waitlist. Setting passes up has two parts: an administrator enters the Apple and Google
+          details once, then each driver adds the pass from their account.
+        </Para>
+        <Alert severity="info" sx={{ mb: 2 }}>
+          Passes need the charge point's reader to accept them, as set on the charge point form. Apple and Google
+          may also need to approve your reader before taps work reliably. Check with your reader vendor.
+        </Alert>
+
+        <Typography variant="h6" gutterBottom>
+          Set up Apple Wallet
+        </Typography>
+        <Para>
+          You need an Apple Developer account. Create the certificates first, then convert them to the text format the
+          app reads. The commands below use <code>openssl</code>, which is on macOS and most Linux systems.
+        </Para>
+        <Steps>
+          <li>
+            In your Apple Developer account, under <strong>Identifiers</strong>, create a pass type ID, such as{' '}
+            <code>pass.com.example.charging</code>. Note your 10-character <strong>Team ID</strong>.
+          </li>
+          <li>
+            Under the pass type ID, create a pass certificate. Download the <code>.cer</code> file and open it in Keychain
+            Access with its private key, then export the pair as a <code>.p12</code> file.
+          </li>
+          <li>
+            Convert the certificate: <code>openssl x509 -inform der -in pass.cer -out pass-cert.pem</code>
+          </li>
+          <li>
+            Export the private key without a passphrase: <code>openssl pkcs12 -in pass.p12 -nocerts -nodes -out pass-key.pem</code>.
+            Enter the password you chose for the <code>.p12</code> when asked.
+          </li>
+          <li>
+            Download Apple's current Worldwide Developer Relations certificate from the certificate authority page at
+            apple.com, then convert it: <code>openssl x509 -inform der -in AppleWWDR.cer -out wwdr.pem</code>
+          </li>
+          <li>
+            Open <strong>Admin</strong>, then <strong>Wallet passes</strong>. Fill in the Apple fields, including the
+            contents of <code>pass-cert.pem</code>, <code>pass-key.pem</code> and <code>wwdr.pem</code>. Select{' '}
+            <strong>Save wallet settings</strong>.
+          </li>
+        </Steps>
+        <Para>
+          Apple pass certificates expire after a year. Renew the certificate, convert it, and paste the new certificate
+          and key in. Once the certificate expires, Apple Wallet won't accept new passes, so set a reminder.
+        </Para>
+
+        <Typography variant="h6" gutterBottom>
+          Set up Google Wallet
+        </Typography>
+        <Steps>
+          <li>
+            In the Google Pay &amp; Wallet console, note your <strong>Issuer ID</strong>. Create a generic pass class,
+            such as <code>charging_pass</code>, and note its <strong>Class ID</strong>.
+          </li>
+          <li>
+            In Google Cloud, create a service account, then create a JSON key for it. In the Google Pay &amp; Wallet
+            console, add the service account's email address as a user who can issue passes.
+          </li>
+          <li>
+            Open <strong>Admin</strong>, then <strong>Wallet passes</strong>. Fill in the Google fields. For the service
+            account key, paste the whole JSON file. Select <strong>Save wallet settings</strong>.
+          </li>
+        </Steps>
+        <Para>
+          Taps with a Google Wallet pass need Google's Smart Tap approval for your class. Ask Google about Smart Tap
+          when you apply for the class.
+        </Para>
+
+        <Typography variant="h6" gutterBottom>
+          Design the pass
+        </Typography>
+        <Para>
+          Under <strong>Pass design</strong>, choose the background, text and label colours. The preview shows
+          roughly how the pass will look. Then set the large line on the front, its small heading, and the text on the
+          back. Leave a field blank to use the standard wording.
+        </Para>
+        <Para>
+          To add your own icon, select <strong>Choose PNG</strong> and pick a plain PNG that is 58 by 58 pixels. Without
+          one, the pass uses a plain square. Apple passes also show your organization name, from the Apple settings.
+        </Para>
+
+        <Typography variant="h6" gutterBottom>
+          Check the set-up
+        </Typography>
+        <Para>
+          Under <strong>Check the signing</strong>, select the button. The app builds a test pass for each platform you
+          have filled in. A green message means the certificates and keys work together. A red message names the field
+          that needs fixing. The app also refuses a certificate that doesn't match its key, or a certificate for a
+          different pass type, when you save.
+        </Para>
+        <Alert severity="success">
+          Once a platform shows <strong>Ready</strong>, drivers see its button on their account page.
+        </Alert>
+
+        <Typography variant="h6" gutterBottom>
+          What drivers do
+        </Typography>
+        <Para>
+          Drivers sign in to their account, then find <strong>Wallet pass</strong> on the account page. They select{' '}
+          <strong>Add to Apple Wallet</strong> on an iPhone, or <strong>Save to Google Wallet</strong> on an Android
+          phone. The pass is made the first time they ask for it, and asking again gives them the same pass.
+        </Para>
+        <Para>
+          The pass does nothing until it is the driver's turn. When they are called from the waitlist, they tap the phone
+          on the reader of the charge point they were offered. A charge point without the wallet option set ignores the
+          pass.
+        </Para>
+
+        <Typography variant="h6" gutterBottom>
+          When a pass stops working
+        </Typography>
+        <Para>
+          A pass stops working at once when a driver's account is deleted, when you erase the driver's personal data, or
+          when the driver has not used the waitlist for longer than the queue retention period. A driver who asks again
+          gets a new pass. The old one stays on the phone and won't work, so they should remove it from their wallet.
+        </Para>
+        <Para>
+          Passes already on drivers' phones keep the look they were made with. Only passes made after a change show the
+          new design, so drivers who want the new look need to add the pass again.
+        </Para>
       </>
     ),
   },

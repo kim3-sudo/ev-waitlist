@@ -62,6 +62,15 @@ export function StationStatusDialog({ stationId, onClose }) {
   const [holdForm, setHoldForm] = useState({});
   const [trigger, setTrigger] = useState({ requestedMessage: 'MeterValues', connectorId: '' });
   const [edits, setEdits] = useState({});
+  const [firmwareChoice, setFirmwareChoice] = useState('');
+  const [limit, setLimit] = useState({ connectorId: 0, limitAmps: '' });
+  const [firmwareList, setFirmwareList] = useState([]);
+
+  // Firmware images to choose from, shown only when this charge point has firmware support turned on.
+  useEffect(() => {
+    if (!canControl || !status?.firmwareUpdateEnabled) return;
+    api.get('/api/admin/firmware').then(({ data }) => setFirmwareList(data.data)).catch(() => setFirmwareList([]));
+  }, [canControl, status?.firmwareUpdateEnabled]);
 
   async function load() {
     try {
@@ -304,6 +313,109 @@ export function StationStatusDialog({ stationId, onClose }) {
             </Stack>
           )}
           {!status.online && <Typography variant="caption" color="text.secondary">The charge point must be connected to receive commands.</Typography>}
+
+          {canControl && (
+            <>
+              <Divider />
+              <Typography variant="subtitle2" fontWeight={600}>Firmware and diagnostics</Typography>
+              {!status.firmwareUpdateEnabled ? (
+                <Typography variant="caption" color="text.secondary">
+                  Turn on "Firmware updates and diagnostics logs" in this charge point's settings to use these.
+                </Typography>
+              ) : (
+                <Stack spacing={1}>
+                  <Stack direction="row" spacing={1} alignItems="center">
+                    <TextField
+                      select
+                      size="small"
+                      label="Firmware"
+                      value={firmwareChoice}
+                      onChange={(e) => setFirmwareChoice(e.target.value)}
+                      sx={{ flex: 1 }}
+                      helperText={firmwareList.length === 0 ? 'Upload firmware on the Firmware page first.' : ' '}
+                    >
+                      {firmwareList.map((pkg) => (
+                        <MenuItem key={pkg.id} value={pkg.id}>
+                          {pkg.version} — {pkg.name}
+                        </MenuItem>
+                      ))}
+                    </TextField>
+                    <Button
+                      variant="outlined"
+                      disabled={busy || !status.online || !firmwareChoice}
+                      onClick={() => send('/update-firmware', { firmwarePackageId: firmwareChoice })}
+                    >
+                      Install firmware
+                    </Button>
+                  </Stack>
+                  <Stack direction="row" spacing={1}>
+                    <Button variant="outlined" disabled={busy || !status.online} onClick={() => send('/get-diagnostics', {})}>
+                      Request diagnostics log
+                    </Button>
+                  </Stack>
+                  <Typography variant="caption" color="text.secondary">
+                    The charge point downloads the firmware or uploads its log when it can. Progress appears in the history below. Logs are kept on the Firmware page.
+                  </Typography>
+                </Stack>
+              )}
+            </>
+          )}
+
+          {canControl && (status.smartChargingEnabled || status.localListEnabled) && (
+            <>
+              <Divider />
+              <Typography variant="subtitle2" fontWeight={600}>Smart charging and local list</Typography>
+              {status.smartChargingEnabled && (
+                <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
+                  <TextField
+                    select
+                    size="small"
+                    label="Applies to"
+                    value={limit.connectorId}
+                    onChange={(e) => setLimit({ ...limit, connectorId: Number(e.target.value) })}
+                    sx={{ minWidth: 180 }}
+                  >
+                    <MenuItem value={0}>Whole charge point</MenuItem>
+                    {status.connectors.map((c) => (
+                      <MenuItem key={c.connectorId} value={c.connectorId}>Connector {c.connectorId}</MenuItem>
+                    ))}
+                  </TextField>
+                  <TextField
+                    size="small"
+                    label="Limit (A)"
+                    type="number"
+                    value={limit.limitAmps}
+                    onChange={(e) => setLimit({ ...limit, limitAmps: e.target.value })}
+                    sx={{ width: 120 }}
+                  />
+                  <Button
+                    variant="outlined"
+                    disabled={busy || !status.online || !limit.limitAmps}
+                    onClick={() => send('/charging-limit', { connectorId: limit.connectorId, limitAmps: Number(limit.limitAmps) })}
+                  >
+                    Set limit
+                  </Button>
+                  <Button
+                    variant="outlined"
+                    disabled={busy || !status.online}
+                    onClick={() => send(`/charging-limit?connectorId=${limit.connectorId}`, {}, 'delete')}
+                  >
+                    Remove limit
+                  </Button>
+                </Stack>
+              )}
+              {status.localListEnabled && (
+                <Stack direction="row" spacing={1} alignItems="center">
+                  <Button variant="outlined" disabled={busy || !status.online} onClick={() => send('/local-list')}>
+                    Send local list now
+                  </Button>
+                  <Typography variant="caption" color="text.secondary">
+                    The site's list of ID tags this charge point may accept or refuse offline. Changes are sent automatically.
+                  </Typography>
+                </Stack>
+              )}
+            </>
+          )}
 
           <Divider />
           <Stack direction="row" alignItems="center" spacing={1}>

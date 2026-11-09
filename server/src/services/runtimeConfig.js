@@ -58,6 +58,27 @@ export const SETTING_DEFS = {
   'sms.twilio.authToken': { env: null, fallback: '', kind: 'secret', group: 'sms' },
   // A Twilio phone number (+...), or a Messaging Service SID (starts with MG).
   'sms.twilio.sender': { env: null, fallback: '', kind: 'text', group: 'sms' },
+
+  // Wallet passes (see services/wallet). Set in the admin pages only. The certificates are
+  // public, so they are stored as text; the keys and the Google service account are secret.
+  'wallet.apple.passTypeIdentifier': { env: null, fallback: '', kind: 'text', group: 'wallet' },
+  'wallet.apple.teamIdentifier': { env: null, fallback: '', kind: 'text', group: 'wallet' },
+  'wallet.apple.organizationName': { env: null, fallback: '', kind: 'text', group: 'wallet' },
+  'wallet.apple.signingCertificate': { env: null, fallback: '', kind: 'text', group: 'wallet' },
+  'wallet.apple.signingKey': { env: null, fallback: '', kind: 'secret', group: 'wallet' },
+  'wallet.apple.wwdrCertificate': { env: null, fallback: '', kind: 'text', group: 'wallet' },
+  'wallet.google.issuerId': { env: null, fallback: '', kind: 'text', group: 'wallet' },
+  'wallet.google.classId': { env: null, fallback: '', kind: 'text', group: 'wallet' },
+  'wallet.google.serviceAccountKey': { env: null, fallback: '', kind: 'secret', group: 'wallet' },
+  // Pass design (see services/wallet/design.js). Empty values use the defaults in that file.
+  'wallet.design.backgroundColor': { env: null, fallback: '#166534', kind: 'text', group: 'wallet' },
+  'wallet.design.foregroundColor': { env: null, fallback: '#FFFFFF', kind: 'text', group: 'wallet' },
+  'wallet.design.labelColor': { env: null, fallback: '#D1FAE5', kind: 'text', group: 'wallet' },
+  'wallet.design.primaryLabel': { env: null, fallback: 'CHARGING PASS', kind: 'text', group: 'wallet' },
+  'wallet.design.primaryValue': { env: null, fallback: 'Tap to charge', kind: 'text', group: 'wallet' },
+  'wallet.design.backText': { env: null, fallback: '', kind: 'text', group: 'wallet' },
+  // A PNG, 58 by 58 pixels, as base64. Empty uses a plain square.
+  'wallet.design.iconPng': { env: null, fallback: '', kind: 'text', group: 'wallet' },
 };
 
 const SECRET_KINDS = new Set(['secret']);
@@ -93,7 +114,7 @@ export function sitePathPrefix(slug) {
 // be decrypted (wrong or missing CONFIG_ENCRYPTION_KEY) load as empty and are
 // reported as unreadable.
 function buildSite(stored, slug) {
-  const config = { stripe: {}, braintree: {}, square: {}, email: {}, sms: {} };
+  const config = { stripe: {}, braintree: {}, square: {}, email: {}, sms: {}, wallet: { apple: {}, google: {}, design: {} } };
   const unreadable = new Set();
   for (const [key, def] of Object.entries(SETTING_DEFS)) {
     const raw = stored.get(key);

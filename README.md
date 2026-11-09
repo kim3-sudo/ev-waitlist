@@ -9,6 +9,7 @@
 - [Operator checklist](docs/operator-checklist.md): what to set up and review before drivers use the site.
 - [Roaming (OCPI)](docs/ocpi.md): what roaming needs, and what is not built yet.
 - [Audit log](docs/audit.md): what is recorded, tamper evidence, retention, and sending events to a SIEM over TLS.
+- [Charge point features](docs/charge-point-features.md): per-charge-point switches for smart charging, firmware, and local lists; firmware and diagnostics storage; OCPP 2.0.1; tax, receipts and invoices.
 - [REST API](docs/api.md): connecting other systems with service accounts and API keys. The reference is served at `/api/docs`.
 - [Security](SECURITY.md): how to report a vulnerability.
 

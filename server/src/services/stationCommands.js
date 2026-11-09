@@ -1,5 +1,6 @@
 import { prisma } from '../db.js';
 import { registry } from './stationRegistry.js';
+import { OCPP20, fromOcpp20Result, toOcpp20 } from './ocpp20Commands.js';
 import { recordStationEvent } from './stationEvents.js';
 
 // Sends one OCPP request to a charge point an admin is looking at. Never throws:
@@ -20,9 +21,17 @@ export async function callStation(station, method, params, { timeoutMs = DEFAULT
   if (!client) {
     return { ok: false, offline: true, message: 'The charge point is not connected.' };
   }
+  // A charge point that connected with OCPP 2.0.1 gets its own message shape for the same command.
+  const twenty = client.protocol === OCPP20;
+  let call = { method, params };
+  if (twenty) {
+    const translated = await toOcpp20(station, method, params);
+    if (translated.unsupported) return { ok: false, message: translated.unsupported };
+    call = translated;
+  }
   try {
-    const result = await withTimeout(client.call(method, params), timeoutMs);
-    return { ok: true, result };
+    const answer = await withTimeout(client.call(call.method, call.params), timeoutMs);
+    return { ok: true, result: twenty ? fromOcpp20Result(method, answer) : answer };
   } catch (err) {
     if (err.message === 'timeout') {
       return { ok: false, message: 'The charge point did not answer in time. Check its network connection.' };

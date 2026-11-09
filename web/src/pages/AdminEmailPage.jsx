@@ -22,7 +22,7 @@ const EMAIL_CONFIG = {
       label: 'From address',
       help: 'Drivers see this address. Use one on a domain your provider is allowed to send for.',
     },
-    { key: 'email.fromName', label: 'From name (optional)', help: 'For example, the name of your car park.' },
+    { key: 'email.fromName', label: 'From name (optional)', help: 'For example, the name of your parking lot.' },
   ],
   byProvider: {
     SMTP: [
