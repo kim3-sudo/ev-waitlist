@@ -47,6 +47,10 @@ const TENANT_SCOPED_MODELS = new Set([
   'receipt',
   'documentCounter',
   'localListEntry',
+  'webhookEndpoint',
+  'webhookDelivery',
+  'subscriptionPlan',
+  'subscription',
 ]);
 
 // Operations that take a `where` (other than the finds, which are matched by prefix).

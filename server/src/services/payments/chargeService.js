@@ -11,6 +11,9 @@ import { settleHoldForTransaction } from './holds.js';
 import { randomBytes } from 'node:crypto';
 import { taxForCharge } from '../tax.js';
 import { issueReceiptForCharge } from '../billing.js';
+import { discountForSession } from '../subscriptions.js';
+import { emitEvent } from '../webhooks.js';
+import { currentTenantId } from '../../tenancy/context.js';
 
 export function formatMoney(cents, currency) {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(cents / 100);
@@ -50,13 +53,18 @@ export async function createChargeForTransaction(stationId, ocppTransactionId) {
   // Tax on the price, from the rules that cover this charge point at this time (see services/tax.js).
   // Exclusive tax is added on top of the price; inclusive tax is already part of it.
   const billable = result.status === 'PENDING';
+  // A subscriber's plan discount comes off the price before tax.
+  const discount = billable
+    ? await discountForSession({ tenantId: tx.tenantId, idTag: tx.idTag, netCents: result.amountCents })
+    : { discountCents: 0, subscriptionId: null };
+  const priceAfterDiscount = result.amountCents - discount.discountCents;
   const tax = billable
     ? await taxForCharge({
       stationId,
       zoneId: tx.station.zoneId,
       pricingModel: settings.pricingModel,
       at: tx.stoppedAt,
-      priceCents: result.amountCents,
+      priceCents: priceAfterDiscount,
     })
     : { netCents: 0, taxCents: 0, grossCents: 0, lines: [] };
   // What the driver pays for the whole session, tax included.
@@ -88,6 +96,8 @@ export async function createChargeForTransaction(stationId, ocppTransactionId) {
       amountCents: balance,
       netCents: tax.netCents,
       taxCents: tax.taxCents,
+      discountCents: discount.discountCents,
+      subscriptionId: discount.subscriptionId,
       taxJson: tax.lines.length ? JSON.stringify(tax.lines) : null,
       holdCapturedCents: held.capturedCents,
       durationSeconds: result.durationSeconds,
@@ -101,6 +111,7 @@ export async function createChargeForTransaction(stationId, ocppTransactionId) {
   });
 
   if (charge.status === 'PAID') {
+    await emitEvent('charge.paid', { chargeId: charge.id, stationId, currency: charge.currency, totalCents: tax.grossCents, taxCents: tax.taxCents }, tx.tenantId).catch((err) => console.error('[webhooks] charge.paid not queued:', err.message));
     await issueReceiptForCharge(charge.id).catch((err) => console.error('[billing] receipt not issued:', err.message));
   }
   if (charge.status === 'PENDING' && settings.provider !== 'NONE' && isProviderConfigured(settings.provider)) {
@@ -130,6 +141,8 @@ export async function markChargePaid(chargeId, { provider, providerRef }) {
     data: { status: 'PAID', paidAt: new Date(), provider, providerRef },
   });
   if (count !== 1) return false;
+  const paid = await prisma.charge.findUnique({ where: { id: chargeId } });
+  await emitEvent('charge.paid', { chargeId, stationId: paid?.stationId, currency: paid?.currency, totalCents: (paid?.netCents ?? 0) + (paid?.taxCents ?? 0) }, paid?.tenantId ?? currentTenantId()).catch((err) => console.error('[webhooks] charge.paid not queued:', err.message));
   await issueReceiptForCharge(chargeId).catch((err) => console.error('[billing] receipt not issued:', err.message));
   return true;
 }

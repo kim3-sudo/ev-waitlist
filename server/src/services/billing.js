@@ -1,5 +1,10 @@
 import { prisma, rawPrisma } from '../db.js';
-import { currentTenantId } from '../tenancy/context.js';
+import { currentTenantId, runWithTenant } from '../tenancy/context.js';
+import { emitEvent } from './webhooks.js';
+import { notifyDriver } from './notifier.js';
+import { emailProblem } from './channels/email.js';
+import { looksLikeEmail } from './contact.js';
+import { siteConfig } from './runtimeConfig.js';
 
 // Consumer receipts and B2B invoices, built from paid charges. Each charge is documented at most once
 // as a receipt, and at most once on an invoice. Numbers come from a counter per site and kind, updated
@@ -69,8 +74,32 @@ export function formatNumber(prefix, n, when = new Date()) {
   return `${prefix}-${when.getUTCFullYear()}-${String(n).padStart(5, '0')}`;
 }
 
-// The receipt for a paid charge. Safe to call again: a charge gets one receipt.
+// The receipt for a paid charge. Safe to call again: a charge gets one receipt, and the e-mail goes out
+// once, with the first issue. The e-mail is sent only when the admin has e-mail receipts on.
 export async function issueReceiptForCharge(chargeId) {
+  const before = await rawPrisma.receipt.findUnique({ where: { chargeId } });
+  const receipt = await issueReceiptRecord(chargeId);
+  if (!receipt || before) return receipt;
+  await emailReceipt(receipt);
+  return receipt;
+}
+
+async function emailReceipt(receipt) {
+  const charge = await rawPrisma.charge.findUnique({ where: { id: receipt.chargeId } });
+  const settings = await rawPrisma.billingSettings.findUnique({ where: { tenantId: receipt.tenantId } });
+  const to = looksLikeEmail(charge?.payerContact) ? charge.payerContact.trim() : null;
+  if (!settings?.emailReceipts || !to || !emailAvailable(receipt.tenantId)) return;
+  const money = (cents) => formatMoney(cents, receipt.currency);
+  const link = `${siteConfig(receipt.tenantId).publicUrl}/api/receipts/${charge.token}`;
+  await runWithTenant(receipt.tenantId, () =>
+    notifyDriver({ contact: to, smsNumber: null }, {
+      subject: `Receipt ${receipt.number}`,
+      body: `Thank you for charging. Receipt ${receipt.number}: ${money(receipt.totalCents)} in total, including tax of ${money(receipt.taxCents)}.\n\nView it here: ${link}`,
+    }),
+  ).catch((err) => console.error('[billing] receipt e-mail not sent:', err.message));
+}
+
+async function issueReceiptRecord(chargeId) {
   const charge = await rawPrisma.charge.findUnique({ where: { id: chargeId } });
   if (!charge || charge.status !== 'PAID') return null;
   const existing = await rawPrisma.receipt.findUnique({ where: { chargeId } });
@@ -174,7 +203,8 @@ export async function createInvoice({ customerId, chargeIds }) {
 
   const lines = charges.map((c) => {
     const netCents = c.netCents ?? c.amountCents + c.holdCapturedCents;
-    const taxCents = c.taxCents ?? 0;
+    // A tax-exempt business is invoiced without tax. The exemption reference is printed on the invoice.
+    const taxCents = customer.taxExempt ? 0 : c.taxCents ?? 0;
     return {
       description: describeCharge(c, c.station?.name),
       chargeId: c.id,
@@ -205,7 +235,14 @@ export async function createInvoice({ customerId, chargeIds }) {
           taxCents: totals.tax,
           totalCents: totals.total,
           supplierSnapshot: JSON.stringify(supplierDetails(settings, tenant?.name)),
-          customerSnapshot: JSON.stringify({ name: customer.name, taxId: customer.taxId, email: customer.email, address: customer.address }),
+          customerSnapshot: JSON.stringify({
+            name: customer.name,
+            taxId: customer.taxId,
+            email: customer.email,
+            address: customer.address,
+            taxExempt: customer.taxExempt === true,
+            exemptionReference: customer.exemptionReference ?? null,
+          }),
           issuedAt,
           dueAt,
           lines: { create: lines },
@@ -272,4 +309,58 @@ export async function markInvoicePaid(invoiceId) {
     data: { status: 'PAID', paidAt: new Date() },
   });
   return { invoice: updated };
+}
+
+// Whether e-mail receipts and invoices can be switched on: e-mail must be set up for the site.
+export function emailAvailable(tenantId = currentTenantId()) {
+  return emailProblem(siteConfig(tenantId).email) === null;
+}
+
+// An invoice built from ready-made lines, with no charges (for example a subscription fee). A tax-exempt
+// customer is invoiced without tax, and the invoice states the exemption reference.
+export async function issueInvoiceFromLines({ tenantId, customer, lines, currency, descriptionTag = null }) {
+  const settings = await rawPrisma.billingSettings.upsert({ where: { tenantId }, create: { tenantId }, update: {} });
+  const tenant = await rawPrisma.tenant.findUnique({ where: { id: tenantId }, select: { name: true } });
+  const rows = lines.map((l) => {
+    const taxCents = customer.taxExempt ? 0 : (l.taxCents ?? 0);
+    return { description: l.description, chargeId: null, netCents: l.netCents, taxCents, totalCents: l.netCents + taxCents, taxJson: null };
+  });
+  const totals = rows.reduce((t, l) => ({ net: t.net + l.netCents, tax: t.tax + l.taxCents, total: t.total + l.totalCents }), { net: 0, tax: 0, total: 0 });
+  const issuedAt = new Date();
+  const dueAt = new Date(issuedAt.getTime() + settings.paymentTermsDays * 24 * 3600 * 1000);
+  const invoice = await rawPrisma.$transaction(async (tx) => {
+    const n = await takeNumber(tx, tenantId, DOCUMENT_KINDS.INVOICE);
+    return tx.invoice.create({
+      data: {
+        tenantId,
+        number: formatNumber(settings.invoicePrefix, n, issuedAt),
+        kind: DOCUMENT_KINDS.INVOICE,
+        customerId: customer.id,
+        currency,
+        netCents: totals.net,
+        taxCents: totals.tax,
+        totalCents: totals.total,
+        supplierSnapshot: JSON.stringify(supplierDetails(settings, tenant?.name)),
+        customerSnapshot: JSON.stringify({ name: customer.name, taxId: customer.taxId, email: customer.email, address: customer.address, taxExempt: customer.taxExempt === true, exemptionReference: customer.exemptionReference ?? null }),
+        issuedAt,
+        dueAt,
+        lines: { create: rows },
+      },
+      include: { lines: true },
+    });
+  });
+  await emitEvent('invoice.issued', { invoiceId: invoice.id, number: invoice.number, totalCents: invoice.totalCents, descriptionTag }, tenantId);
+  if (settings.emailInvoices && customer.email && emailAvailable(tenantId)) {
+    await runWithTenant(tenantId, () =>
+      notifyDriver({ contact: customer.email, smsNumber: null }, {
+        subject: `Invoice ${invoice.number}`,
+        body: `Invoice ${invoice.number} for ${formatMoney(invoice.totalCents, currency)} (tax ${formatMoney(invoice.taxCents, currency)}). Due ${dueAt.toISOString().slice(0, 10)}.\n\n${rows.map((l) => `${l.description}: ${formatMoney(l.totalCents, currency)}`).join('\n')}\n\nAsk for the printed invoice if you need a copy.`,
+      }),
+    ).catch((err) => console.error('[billing] invoice e-mail not sent:', err.message));
+  }
+  return invoice;
+}
+
+function formatMoney(cents, currency) {
+  return new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(cents / 100);
 }

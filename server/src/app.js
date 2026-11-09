@@ -9,6 +9,9 @@ import { deviceFilesRouter } from './routes/deviceFiles.routes.js';
 import { adminBillingRouter, adminTaxRulesRouter } from './routes/admin.billing.routes.js';
 import { publicReceiptsRouter } from './routes/receipts.routes.js';
 import { adminLocalListRouter } from './routes/admin.localList.routes.js';
+import { adminWebhooksRouter } from './routes/admin.webhooks.routes.js';
+import { adminSubscriptionsRouter } from './routes/admin.subscriptions.routes.js';
+import { adminLoadBalancingRouter } from './routes/admin.loadBalancing.routes.js';
 import { adminEmailRouter, adminSmsRouter } from './routes/admin.notifications.routes.js';
 import { authRouter } from './auth/auth.routes.js';
 import { samlRouter } from './auth/saml.routes.js';
@@ -106,6 +109,12 @@ export function createApp() {
   app.use('/api/receipts', publicReceiptsRouter);
   // The site's local authorization list (ID tags charge points may accept, or refuse, offline).
   app.use('/api/admin/local-list', requireAdmin, requireReadOrManage('stations.view', 'stations.manage'), adminLocalListRouter);
+  // Webhook endpoints and their delivery log. Changes need integrations.manage.
+  app.use('/api/admin/webhooks', requirePermission('integrations.manage'), adminWebhooksRouter);
+  // Charging plans and their subscribers.
+  app.use('/api/admin/subscriptions', requireAdmin, requireReadOrManage('payments.view', 'payments.manage'), adminSubscriptionsRouter);
+  // Site supply shared across charge points with smart charging.
+  app.use('/api/admin/load-balancing', requireAdmin, requireReadOrManage('stations.view', 'stations.manage'), adminLoadBalancingRouter);
   app.use('/api/admin/dashboard', requireAdmin, requireReadOrManage('stations.view', 'stations.manage'), adminDashboardRouter);
   app.use('/api/admin/zones', requireAdmin, requireReadOrManage('zones.view', 'zones.manage'), adminZonesRouter);
   // The site's own pin and address, and address lookup for the pin picker.

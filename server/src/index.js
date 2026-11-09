@@ -8,6 +8,7 @@ import { startRetentionSweeper } from './services/retentionSweeper.js';
 import { startAuditSweeper } from './audit/retention.js';
 import { startAuditExporter } from './audit/exporter.js';
 import { startOcpiDispatcher } from './ocpi/outbox.js';
+import { startWebhookDispatcher } from './services/webhooks.js';
 import { startStationWatch } from './services/stationWatch.js';
 import { runWithTenant } from './tenancy/context.js';
 import { startProviderHealthChecks } from './services/payments/providerOutage.js';
@@ -35,4 +36,5 @@ startAuditSweeper();
 // Exports audit events to a SIEM when AUDIT_SYSLOG_URL is set.
 startAuditExporter();
 startOcpiDispatcher();
+startWebhookDispatcher();
 startStationWatch();

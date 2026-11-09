@@ -36,6 +36,9 @@ import { AdminWalletPage } from './pages/AdminWalletPage.jsx';
 import { AdminFirmwarePage } from './pages/AdminFirmwarePage.jsx';
 import { AdminBillingPage } from './pages/AdminBillingPage.jsx';
 import { AdminLocalListPage } from './pages/AdminLocalListPage.jsx';
+import { AdminLoadBalancingPage } from './pages/AdminLoadBalancingPage.jsx';
+import { AdminSubscriptionsPage } from './pages/AdminSubscriptionsPage.jsx';
+import { AdminWebhooksPage } from './pages/AdminWebhooksPage.jsx';
 import { AdminSystemPage } from './pages/AdminSystemPage.jsx';
 import { PayPage } from './pages/PayPage.jsx';
 import { PayHoldPage } from './pages/PayHoldPage.jsx';
@@ -291,6 +294,30 @@ export default function App() {
             element={
               <PermissionRoute permission="stations.view">
                 <AdminLocalListPage />
+              </PermissionRoute>
+            }
+          />
+          <Route
+            path="load-balancing"
+            element={
+              <PermissionRoute permission="stations.view">
+                <AdminLoadBalancingPage />
+              </PermissionRoute>
+            }
+          />
+          <Route
+            path="subscriptions"
+            element={
+              <PermissionRoute permission="payments.view">
+                <AdminSubscriptionsPage />
+              </PermissionRoute>
+            }
+          />
+          <Route
+            path="webhooks"
+            element={
+              <PermissionRoute permission="integrations.manage">
+                <AdminWebhooksPage />
               </PermissionRoute>
             }
           />

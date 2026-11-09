@@ -31,7 +31,18 @@ Limits to know about:
 
 ## Smart charging
 
-Admins set a limit in amps for the whole charge point or for one connector, and remove it. This is a fixed limit. It does not balance power between chargers on a shared supply. Load balancing across a site is not built yet.
+Admins set a limit in amps for the whole charge point or for one connector, and remove it. This is a fixed limit.
+
+## Load balancing
+
+If a site's electrical supply cannot run every charge point at full power at once, turn on load balancing under Charge point features > Load balancing and enter the site supply in kW.
+
+- While load balancing is on, each charge point with smart charging on that is charging shares the supply equally, rounded down to whole amps and capped at the connector's own maximum. Each connector has a minimum of 6 A. If the supply cannot give every charging connector that minimum, the result is reported as over capacity.
+- A connector that is not charging is left at its own maximum, so the next car starts at full power.
+- The balance is worked out again when a session starts or stops, and on each change to the settings. Limits are sent only when they change.
+- Load balancing overrides a manual limit set on a charge point's page. Turn load balancing off to return to manual limits.
+- Charge points that are offline are skipped. They are set when they reconnect and the next balance runs.
+- The supply is assumed to be single-phase at 230 V per connector, unless a connector has a voltage set in its details.
 
 ## Local authorization list
 
@@ -91,10 +102,35 @@ Tax is worked out when a session ends, and stored on the charge with the rules t
 
 Limits to know about:
 
-- Receipts and invoices are not emailed automatically. The receipt page is served at `/api/receipts/<charge token>`, the same token as the charge's payment link. Drivers are not sent this link yet.
-- Tax exemption certificates, reverse charge, and per-customer tax rules are not supported.
+- E-mail: if e-mail is set up for the site, receipts can be e-mailed to drivers who gave an e-mail address, and invoices to the customer's invoice address. Both are off until switched on in the Business details tab; the switch is refused while e-mail is not set up. The e-mail carries a link to the receipt, served at `/api/receipts/<charge token>`. Invoice e-mails carry a text summary, not the printed page.
+- Tax exemption is for business (B2B) customers. An exempt customer's invoices carry no tax, and print the exemption reference. Reverse charge and per-customer tax rules are not supported. Consumer receipts are always taxed.
 - Price shown to drivers does not yet say whether tax is included.
 - A card hold is placed before tax is known, so a hold can be smaller than the final total. The difference is charged through the usual payment link.
 - Rules that name a zone or charge point that has been deleted are ignored, rather than blocking charges.
 
 Before you take payment for charging, have your accountant confirm the rules and the document requirements for your jurisdiction. The software applies the rules you enter. It does not know what your jurisdiction requires.
+
+## Charging plans (subscriptions)
+
+Under Charging plans, an admin defines plans: a name, a monthly fee in cents, and a discount percentage on sessions. A driver is enrolled by their ID tag.
+
+- A subscriber's sessions get the plan's discount before tax. The discount is recorded on the charge.
+- Only one active plan per ID tag. A plan with subscribers cannot be deleted; close it to new subscribers instead.
+- The monthly fee is billed to the subscriber's billing customer, when one is chosen at enrolment. The "Bill this month's plan fees" button puts the fees on one invoice per customer. Each subscription is billed once per calendar month, so pressing the button again does nothing for a month already billed.
+- Subscribers with no billing customer get the discount, but the server does not collect their fee. Collecting consumer subscription fees needs a payment arrangement that is not built yet.
+
+## Reversing a charge
+
+On the Receipts tab, Reverse records that a paid or unpaid charge was reversed, with a required reason. The receipt then shows the reversal and its reason. A reversed charge leaves the list of charges that can be invoiced.
+
+Reversal records the change only. It does not move money: refund the payment in your payment provider. If the charge is already on an invoice, issue a credit note for that invoice too. The reply tells you which.
+
+## Webhooks
+
+Under Webhooks, add an endpoint with an https address and choose the events to send, or all of them. The secret is shown once, when the endpoint is created. Store it with the receiving system.
+
+Events: charge paid, charge reversed, session started, session stopped, station faulted, invoice issued, subscription started, subscription cancelled.
+
+Each post is JSON, with headers `X-Plugyard-Event`, `X-Plugyard-Delivery`, and `X-Plugyard-Signature`. The signature is `t=<unix seconds>,v1=<HMAC-SHA256 of "<t>.<body>">`, keyed with the endpoint's secret. Check it, and refuse a timestamp more than five minutes old.
+
+A post that fails is retried after one minute, then two, four, and so on, up to six hours, and given up after ten attempts. The delivery log shows each event's result and lets you retry one. Addresses on this machine or a private network are refused, unless the operator sets WEBHOOK_ALLOW_PRIVATE_NETWORKS=1.

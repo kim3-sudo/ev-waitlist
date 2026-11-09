@@ -14,6 +14,7 @@ import { nextTransactionId } from '../services/transactionIdCounter.js';
 import { markLatestDiagnosticsFailed } from '../services/diagnosticsLogs.js';
 import { isBlockedIdTag } from '../services/localList.js';
 import { reapplyAvailability } from '../services/stationConfigure.js';
+import { onSessionStarted, onSessionStopped, onFault } from '../services/ocppEvents.js';
 
 // OCPP 2.0.1 messages from a charge point. The same services as OCPP 1.6 do the work, so a session,
 // a price and a waitlist turn behave the same whichever protocol the charge point speaks.
@@ -117,6 +118,7 @@ export function attachOcpp20(client, { handle, stationId, identity, reportFault,
       create: { stationId, connectorId, status, errorCode: 'NoError' },
     });
     if (status === 'Faulted' && previous?.status !== 'Faulted') {
+      onFault(stationId, connectorId, 'Faulted');
       await reportFault(stationId, connectorId, 'Faulted', null).catch((err) =>
         console.error(`[ocpp2.0.1] fault report for ${identity} failed:`, err.message),
       );
@@ -176,6 +178,7 @@ export function attachOcpp20(client, { handle, stationId, identity, reportFault,
       if (decision.held) await fulfillManualHold(stationId, connectorId, idTag);
       await reconcileIdle(stationId, connectorId).catch((err) => console.error(`Idle tracking failed for ${identity}/${connectorId}:`, err));
       await handleStartTransaction(stationId, connectorId, idTag);
+      onSessionStarted(stationId, connectorId, idTag, started.ocppTransactionId);
       return { idTokenInfo: ACCEPTED_TOKEN(expiresAt) };
     }
 
@@ -204,6 +207,7 @@ export function attachOcpp20(client, { handle, stationId, identity, reportFault,
         await enqueue(tx.partnerId, 'CDR', tx.id).catch((err) => console.error('CDR queue failed:', err));
       }
       await reconcileIdle(stationId, tx.connectorId).catch((err) => console.error(`Idle tracking failed for ${identity}/${tx.connectorId}:`, err));
+      onSessionStopped(stationId, tx.ocppTransactionId);
       await createChargeForTransaction(stationId, tx.ocppTransactionId).catch((err) =>
         console.error(`Billing failed for ${identity}/${tx.ocppTransactionId}:`, err),
       );

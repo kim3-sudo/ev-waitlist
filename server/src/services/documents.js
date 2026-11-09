@@ -88,7 +88,11 @@ function sellerBlock(supplier) {
 // The consumer receipt for one paid charge.
 export function renderReceipt({ receipt, charge, stationName, supplier, footerText }) {
   const lines = parseTaxLines(receipt.taxJson);
+  const reversed = charge?.status === 'REVERSED'
+    ? `<div class="status">Reversed on ${escapeHtml(charge.reversedAt ? new Date(charge.reversedAt).toLocaleDateString('en-US') : '')}: ${escapeHtml(charge.reversalReason ?? '')}</div>`
+    : '';
   const body = `
+    ${reversed}
     <div class="head">
       <div><h1>Receipt</h1><div class="muted">${escapeHtml(receipt.number)}</div></div>
       <div class="muted">${escapeHtml(new Date(receipt.issuedAt).toLocaleString('en-US'))}</div>
@@ -132,7 +136,8 @@ export function renderInvoice({ invoice, lines, footerText }) {
     <div class="parties">
       <div><h2>From</h2>${sellerBlock(supplier)}</div>
       <div><h2>Bill to</h2><strong>${escapeHtml(customer.name)}</strong>${customer.taxId ? `<div class="muted">Tax ID: ${escapeHtml(customer.taxId)}</div>` : ''}${
-        customer.address ? `<div class="muted">${escapeHtml(customer.address)}</div>` : ''}</div>
+        customer.address ? `<div class="muted">${escapeHtml(customer.address)}</div>` : ''}${
+        customer.taxExempt ? `<div class="muted">Tax exempt${customer.exemptionReference ? `: ${escapeHtml(customer.exemptionReference)}` : ''}</div>` : ''}</div>
     </div>
     <table>
       <thead><tr><th>Description</th><th class="num">Before tax</th><th class="num">Tax</th><th class="num">Total</th></tr></thead>

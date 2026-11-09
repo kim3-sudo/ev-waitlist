@@ -64,7 +64,16 @@ const SECTIONS = [
     items: [
       { label: 'Firmware and diagnostics', path: '/admin/firmware', permission: 'stations.view' },
       { label: 'Local authorization list', path: '/admin/local-list', permission: 'stations.view' },
+      { label: 'Load balancing', path: '/admin/load-balancing', permission: 'stations.view' },
     ],
+  },
+  {
+    title: 'Charging plans',
+    items: [{ label: 'Plans and subscribers', path: '/admin/subscriptions', permission: 'payments.view' }],
+  },
+  {
+    title: 'Webhooks',
+    items: [{ label: 'Webhook endpoints', path: '/admin/webhooks', permission: 'integrations.manage' }],
   },
   {
     title: 'Billing',

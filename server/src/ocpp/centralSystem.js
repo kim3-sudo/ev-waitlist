@@ -15,6 +15,7 @@ import { storeMeterValues } from '../services/meterService.js';
 import { configureMetering, reapplyAvailability } from '../services/stationConfigure.js';
 import { isManualHoldAuthorized, fulfillManualHold } from '../services/manualHolds.js';
 import { translateIdTag } from '../services/wallet/credentialService.js';
+import { onSessionStarted, onSessionStopped, onFault } from '../services/ocppEvents.js';
 import { markLatestDiagnosticsFailed } from '../services/diagnosticsLogs.js';
 import { attachOcpp20 } from './ocpp20.js';
 import { OCPP20 } from '../services/ocpp20Commands.js';
@@ -40,6 +41,7 @@ async function reportFault(stationId, connectorId, errorCode, info) {
   const station = await prisma.station.findUnique({ where: { id: stationId } });
   const where = connectorId > 0 ? `connector ${connectorId}` : 'the charge point';
   const detail = `${errorCode}${info ? ` (${info})` : ''}`;
+  onFault(stationId, connectorId, errorCode);
   await recordStationEvent(stationId, 'FAULT', `${where}: ${detail}`, { connectorId: connectorId > 0 ? connectorId : null });
   await notifyAdmins('FAULT', `${station.name} reported a fault`, `${station.name} (${station.identity}) reported a fault on ${where}: ${detail}.`);
 }
@@ -233,6 +235,7 @@ export function createCentralSystem() {
       );
 
       await handleStartTransaction(stationId, params.connectorId, params.idTag);
+      onSessionStarted(stationId, params.connectorId, params.idTag, transactionId);
 
       return {
         transactionId,
@@ -258,6 +261,7 @@ export function createCentralSystem() {
           console.error(`Idle tracking failed for ${identity}/${tx.connectorId}:`, err),
         );
       }
+      onSessionStopped(stationId, params.transactionId);
       await createChargeForTransaction(stationId, params.transactionId).catch((err) =>
         console.error(`Billing failed for ${identity}/${params.transactionId}:`, err),
       );

@@ -37,6 +37,10 @@ model Tenant {
   // Extra text the site adds to the roaming warning. The required core text is always shown.
   roamingWarningExtra             String?
 
+  // Load balancing: the site supply in kW shared across the charge points that have smart charging on.
+  // Off until an admin turns it on (see services/loadBalance.js).
+  loadBalancingEnabled            Boolean   @default(false)
+  siteCapacityKw                  Float?
   // Retention, in days after a queue entry closes (personal data).
   queueRetentionDays     Int  @default(30)
   // Retention, in days, for payer details on charges. Null keeps them indefinitely.
@@ -101,6 +105,10 @@ model Tenant {
   invoices              Invoice[]
   receipts              Receipt[]
   documentCounters      DocumentCounter[]
+  webhookEndpoints      WebhookEndpoint[]
+  webhookDeliveries     WebhookDelivery[]
+  subscriptionPlans     SubscriptionPlan[]
+  subscriptions         Subscription[]
 }
 
 model Admin {
@@ -698,6 +706,12 @@ model Charge {
   // Amount already captured from a pre-authorization hold. amountCents is then
   // only the balance still owed (the session cost minus this amount).
   holdCapturedCents Int         @default(0)
+  // A subscription discount taken off the price before tax, and the plan it came from.
+  discountCents     Int         @default(0)
+  subscriptionId    String?
+  // Set when the charge is reversed (status REVERSED). The reason is required.
+  reversedAt        DateTime?
+  reversalReason    String?
   createdAt         DateTime    @default(now())
 
   @@index([tenantId])
@@ -1029,6 +1043,9 @@ model BillingSettings {
   paymentTermsDays Int      @default(30)
   // Text printed at the foot of every document.
   footerText       String?
+  // Send receipts and invoices by e-mail. Only settable once e-mail is set up for the site.
+  emailReceipts    Boolean  @default(false)
+  emailInvoices    Boolean  @default(false)
   updatedAt        DateTime @updatedAt
 }
 
@@ -1070,9 +1087,13 @@ model BillingCustomer {
   email     String?
   address   String?
   notes     String?
+  // A tax-exempt business is invoiced without tax, and the invoice states the exemption reference.
+  taxExempt         Boolean   @default(false)
+  exemptionReference String?
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   invoices  Invoice[]
+  subscriptions Subscription[]
 
   @@index([tenantId])
 }
@@ -1163,4 +1184,89 @@ model LocalListEntry {
   updatedAt DateTime @updatedAt
 
   @@unique([tenantId, idTag])
+}
+
+// A webhook: the URL the server posts events to, and the secret that signs each post. The secret is
+// stored encrypted and shown once, when the endpoint is created.
+model WebhookEndpoint {
+  id          String            @id @default(cuid())
+  tenant      Tenant            @relation(fields: [tenantId], references: [id])
+  tenantId    String
+  url         String
+  // Encrypted HMAC signing secret (see utils/secretBox.js).
+  secret      String
+  // Comma-separated event types this endpoint receives, or * for all.
+  events      String            @default("*")
+  active      Boolean           @default(true)
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  deliveries  WebhookDelivery[]
+
+  @@index([tenantId])
+}
+
+// One event for one endpoint. The dispatcher retries failed deliveries with backoff, then gives up.
+model WebhookDelivery {
+  id              String           @id @default(cuid())
+  tenant          Tenant           @relation(fields: [tenantId], references: [id])
+  tenantId        String
+  endpoint        WebhookEndpoint  @relation(fields: [endpointId], references: [id], onDelete: Cascade)
+  endpointId      String
+  eventId         String
+  eventType       String
+  payload         String
+  // PENDING (waiting to send or retry), DELIVERED, or FAILED (gave up after the last retry).
+  status          String           @default("PENDING")
+  attempts        Int              @default(0)
+  nextAttemptAt   DateTime         @default(now())
+  lastStatusCode  Int?
+  lastError       String?
+  createdAt       DateTime         @default(now())
+  deliveredAt     DateTime?
+
+  @@index([tenantId])
+  @@index([status, nextAttemptAt])
+}
+
+// A charging plan an admin defines: a monthly fee, and a discount on each session for subscribers.
+model SubscriptionPlan {
+  id              String         @id @default(cuid())
+  tenant          Tenant         @relation(fields: [tenantId], references: [id])
+  tenantId        String
+  name            String
+  description     String?
+  monthlyFeeCents Int            @default(0)
+  currency        String
+  discountPercent Int            @default(0)
+  active          Boolean        @default(true)
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  subscriptions   Subscription[]
+
+  @@index([tenantId])
+}
+
+// A driver enrolled in a plan. Sessions by the driver's ID tag get the plan's discount. The monthly fee
+// is billed to the subscriber's billing customer, when one is set.
+model Subscription {
+  id               String           @id @default(cuid())
+  tenant           Tenant           @relation(fields: [tenantId], references: [id])
+  tenantId         String
+  plan             SubscriptionPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+  planId           String
+  idTag            String
+  driverName       String?
+  billingCustomer  BillingCustomer? @relation(fields: [billingCustomerId], references: [id], onDelete: SetNull)
+  billingCustomerId String?
+  // ACTIVE or CANCELLED.
+  status           String           @default("ACTIVE")
+  startedAt        DateTime         @default(now())
+  cancelledAt      DateTime?
+  // The billing month (YYYY-MM) the fee was last put on an invoice, so a month is billed once.
+  lastBilledPeriod String?
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  @@index([tenantId])
+  @@index([idTag])
 }

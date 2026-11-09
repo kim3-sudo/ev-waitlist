@@ -4,12 +4,14 @@ import { currentTenantId } from '../tenancy/context.js';
 import {
   createCreditNote,
   createInvoice,
+  emailAvailable,
   getBillingSettings,
   markInvoicePaid,
   normalizeBillingSettings,
   uninvoicedCharges,
 } from '../services/billing.js';
 import { parseTaxLines, renderInvoice, renderReceipt } from '../services/documents.js';
+import { reverseCharge } from '../services/reversal.js';
 import { normalizeTaxRule, computeTax, ruleCovers, serializeTaxRule } from '../services/tax.js';
 
 // Billing: business details, customers, invoices, credit notes and receipts. Mounted behind
@@ -64,6 +66,8 @@ function serializeCustomer(c, invoiceCount = null) {
     email: c.email,
     address: c.address,
     notes: c.notes,
+    taxExempt: Boolean(c.taxExempt),
+    exemptionReference: c.exemptionReference ?? null,
     invoiceCount,
     updatedAt: c.updatedAt,
   };
@@ -90,6 +94,15 @@ function customerFields(body, { partial = false } = {}) {
   const problem = problems.find(Boolean);
   if (problem) return { error: problem };
   if (value.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.email)) return { error: 'E-mail address is not valid' };
+  if (body.taxExempt !== undefined) {
+    if (typeof body.taxExempt !== 'boolean') return { error: 'Tax exempt must be true or false' };
+    value.taxExempt = body.taxExempt;
+  }
+  if (body.exemptionReference !== undefined || !partial) {
+    const ref = String(body.exemptionReference ?? '').trim();
+    if (ref.length > 100) return { error: 'The exemption reference must be 100 characters or fewer' };
+    value.exemptionReference = ref || null;
+  }
   return { value };
 }
 
@@ -105,16 +118,29 @@ adminBillingRouter.get('/settings', async (_req, res) => {
     receiptPrefix: s.receiptPrefix,
     paymentTermsDays: s.paymentTermsDays,
     footerText: s.footerText,
+    emailReceipts: s.emailReceipts,
+    emailInvoices: s.emailInvoices,
+    emailAvailable: emailAvailable(),
   });
 });
 
 adminBillingRouter.put('/settings', async (req, res) => {
   const parsed = normalizeBillingSettings(req.body ?? {});
   if (parsed.error) return res.status(400).json({ error: parsed.error });
+  // E-mail receipts and invoices can only be switched on once e-mail is set up for the site.
+  const switches = {};
+  for (const key of ['emailReceipts', 'emailInvoices']) {
+    if (req.body?.[key] === undefined) continue;
+    if (typeof req.body[key] !== 'boolean') return res.status(400).json({ error: `${key} must be true or false` });
+    switches[key] = req.body[key];
+  }
+  if ((switches.emailReceipts || switches.emailInvoices) && !emailAvailable()) {
+    return res.status(409).json({ error: 'E-mail is not set up for this site yet. Set it up under E-mail server first.' });
+  }
   await getBillingSettings();
   const s = await prisma.billingSettings.update({
     where: { tenantId: currentTenantId() },
-    data: parsed.value,
+    data: { ...parsed.value, ...switches },
   });
   res.json({
     legalName: s.legalName,
@@ -124,6 +150,9 @@ adminBillingRouter.put('/settings', async (req, res) => {
     receiptPrefix: s.receiptPrefix,
     paymentTermsDays: s.paymentTermsDays,
     footerText: s.footerText,
+    emailReceipts: s.emailReceipts,
+    emailInvoices: s.emailInvoices,
+    emailAvailable: emailAvailable(),
   });
 });
 
@@ -157,6 +186,25 @@ adminBillingRouter.delete('/customers/:id', async (req, res) => {
   if (invoiced > 0) return res.status(409).json({ error: 'This customer has invoices and cannot be deleted' });
   await prisma.billingCustomer.delete({ where: { id: existing.id } });
   res.status(204).end();
+});
+
+// ---- Charge reversal ---------------------------------------------------------------
+
+// Records that a charge was reversed, with the reason. It does not refund the payment: that is done in
+// the payment provider. A charge on an invoice must also be credited there.
+adminBillingRouter.post('/charges/:id/reverse', async (req, res) => {
+  const outcome = await reverseCharge({ tenantId: currentTenantId(), chargeId: req.params.id, reason: req.body?.reason });
+  if (outcome.error) return sendError(res, outcome);
+  res.json({
+    id: outcome.charge.id,
+    status: outcome.charge.status,
+    reversedAt: outcome.charge.reversedAt,
+    reversalReason: outcome.charge.reversalReason,
+    onInvoice: outcome.onInvoice,
+    message: outcome.onInvoice
+      ? 'The charge is reversed. It is on an invoice, so issue a credit note for that invoice too. Refund the payment in your payment provider.'
+      : 'The charge is reversed. Refund the payment in your payment provider.',
+  });
 });
 
 // ---- Invoices ----------------------------------------------------------------------

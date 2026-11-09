@@ -485,6 +485,22 @@ function Receipts() {
                 <TableCell align="right">{money(r.totalCents, r.currency)}</TableCell>
                 <TableCell align="right">
                   <Button size="small" onClick={() => openDocument(`/api/admin/billing/receipts/${r.id}/document`)}>View</Button>
+                  <Button
+                    size="small"
+                    color="warning"
+                    onClick={async () => {
+                      const reason = window.prompt('Why is this charge being reversed? The reason is kept on the charge.');
+                      if (!reason) return;
+                      try {
+                        const { data } = await api.post(`/api/admin/billing/charges/${r.chargeId}/reverse`, { reason });
+                        window.alert(data.message);
+                      } catch (err) {
+                        window.alert(err.response?.data?.error ?? 'The charge could not be reversed.');
+                      }
+                    }}
+                  >
+                    Reverse
+                  </Button>
                 </TableCell>
               </TableRow>
             ))}
@@ -574,6 +590,13 @@ function Customers({ canManage }) {
               <TextField label="Invoice e-mail" value={form.email ?? ''} onChange={(e) => setForm({ ...form, email: e.target.value })} />
               <TextField label="Address" multiline value={form.address ?? ''} onChange={(e) => setForm({ ...form, address: e.target.value })} />
               <TextField label="Notes" multiline value={form.notes ?? ''} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
+              <FormControlLabel
+                control={<Checkbox checked={Boolean(form.taxExempt)} onChange={(e) => setForm({ ...form, taxExempt: e.target.checked })} />}
+                label="Tax exempt (invoices carry no tax)"
+              />
+              {form.taxExempt && (
+                <TextField label="Exemption reference" value={form.exemptionReference ?? ''} onChange={(e) => setForm({ ...form, exemptionReference: e.target.value })} helperText="Printed on invoices, for example the certificate number." />
+              )}
             </Stack>
           </DialogContent>
           <DialogActions>
@@ -628,6 +651,20 @@ function BusinessDetails({ canManage }) {
         </Stack>
         <TextField label="Payment terms (days)" type="number" value={form.paymentTermsDays} onChange={set('paymentTermsDays')} disabled={!canManage} />
         <TextField label="Footer text" multiline value={form.footerText ?? ''} onChange={set('footerText')} disabled={!canManage} helperText="For example company registration number." />
+        <Typography variant="subtitle2" fontWeight={600}>E-mail</Typography>
+        {!form.emailAvailable && (
+          <Typography variant="body2" color="text.secondary">
+            E-mail is not set up for this site yet. Set it up under E-mail server to send receipts and invoices by e-mail.
+          </Typography>
+        )}
+        <FormControlLabel
+          control={<Checkbox checked={Boolean(form.emailReceipts)} disabled={!canManage || (!form.emailAvailable && !form.emailReceipts)} onChange={(e) => setForm({ ...form, emailReceipts: e.target.checked })} />}
+          label="E-mail receipts to drivers who gave an e-mail address"
+        />
+        <FormControlLabel
+          control={<Checkbox checked={Boolean(form.emailInvoices)} disabled={!canManage || (!form.emailAvailable && !form.emailInvoices)} onChange={(e) => setForm({ ...form, emailInvoices: e.target.checked })} />}
+          label="E-mail invoices to the customer's invoice address"
+        />
         {canManage && <Button type="submit" variant="contained" sx={{ alignSelf: 'flex-start' }}>Save details</Button>}
       </Stack>
     </Paper>
