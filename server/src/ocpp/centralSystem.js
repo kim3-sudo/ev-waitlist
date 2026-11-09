@@ -110,11 +110,11 @@ export function createCentralSystem() {
       await prisma.station.update({
         where: { id: stationId },
         data: {
-          serialNumber: params.chargePointSerialNumber ?? params.chargeBoxSerialNumber ?? current.serialNumber,
-          firmwareVersion: params.firmwareVersion ?? current.firmwareVersion,
+          serialNumber: params.chargePointSerialNumber ?? params.chargeBoxSerialNumber ?? current?.serialNumber ?? null,
+          firmwareVersion: params.firmwareVersion ?? current?.firmwareVersion ?? null,
           // Fill in the vendor and model only where the admin left them blank.
-          vendor: current.vendor || params.chargePointVendor || null,
-          model: current.model || params.chargePointModel || null,
+          vendor: current?.vendor || params.chargePointVendor || null,
+          model: current?.model || params.chargePointModel || null,
         },
       });
       const firmware = params.firmwareVersion ? `, firmware ${params.firmwareVersion}` : '';

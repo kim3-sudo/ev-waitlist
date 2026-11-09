@@ -14,6 +14,7 @@ import { toOcpp20, fromOcpp20Result, OCPP20 } from '../src/services/ocpp20Comman
 import { callStation } from '../src/services/stationCommands.js';
 import { isBlockedIdTag, sendLocalList, LOCAL_LIST_MAX } from '../src/services/localList.js';
 import { resetSeenThrottle } from '../src/services/stationEvents.js';
+import { cancelPendingRebalances } from '../src/services/loadBalance.js';
 
 const PASSWORD = 'CorrectHorse1!';
 const IDENTITY = 'CP20-TEST';
@@ -82,6 +83,7 @@ async function authorizedDriver(stationId, idTag) {
 }
 
 beforeEach(async () => {
+  cancelPendingRebalances();
   await resetDb();
   resetSeenThrottle();
 });

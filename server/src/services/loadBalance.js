@@ -120,8 +120,18 @@ export async function rebalanceSite(tenantId) {
 }
 
 // Runs a balance without waiting for the caller. Errors go to the log, never to the message that triggered it.
+const pendingRebalances = new Set();
 export function rebalanceLater(tenantId) {
-  setTimeout(() => {
+  const timer = setTimeout(() => {
+    pendingRebalances.delete(timer);
     rebalanceSite(tenantId).catch((err) => console.error('[load-balance] failed:', err.message));
   }, 300);
+  pendingRebalances.add(timer);
+}
+
+// Cancels balances that were scheduled but have not run yet. Tests use this so a balance from one
+// test cannot send a limit into the next test's charge point.
+export function cancelPendingRebalances() {
+  for (const timer of pendingRebalances) clearTimeout(timer);
+  pendingRebalances.clear();
 }
