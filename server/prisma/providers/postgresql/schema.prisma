@@ -68,6 +68,7 @@ model Tenant {
   stations              Station[]
   driverVehicles        DriverVehicle[]
   driverSignInCodes     DriverSignInCode[]
+  walletCredentials     WalletCredential[]
   queueEntries          QueueEntry[]
   reservations          Reservation[]
   transactions          Transaction[]
@@ -110,6 +111,9 @@ model Admin {
   name               String?
   phone              String?
   driverVehicles     DriverVehicle[]
+  // Wallet pass credentials this account holds (see services/wallet).
+  walletCredentials  WalletCredential[]
+  queueEntries       QueueEntry[]
   // Alerts this admin chooses to receive by e-mail (see services/adminAlerts.js).
   alertOnFault       Boolean         @default(false)
   alertOffline       Boolean         @default(false)
@@ -213,6 +217,8 @@ model Station {
   id                String    @id @default(cuid())
   tenant            Tenant    @relation(fields: [tenantId], references: [id])
   tenantId          String
+  // Whether this charge point has an NFC reader that accepts wallet passes (see services/wallet).
+  walletTap         Boolean   @default(false)
   // OCPP "identity" -- the charge point ID used in the websocket URL
   // (ws://host:port/ocpp/<identity>) and in every OCPP message exchange.
   identity          String    @unique
@@ -315,6 +321,9 @@ model QueueEntry {
   zoneId        String?
   name          String
   contact       String
+  // The driver account that joined, when the driver was signed in. Null for guests.
+  accountId     String?
+  account       Admin?    @relation(fields: [accountId], references: [id], onDelete: SetNull)
   // Optional mobile number for text messages, set when the driver elects SMS.
   smsNumber     String?
   idTag         String
@@ -334,6 +343,7 @@ model QueueEntry {
   lineCuttingComplaints LineCuttingComplaint[]
 
   @@index([tenantId])
+  @@index([accountId])
 }
 
 // A hold placed on a specific connector for a specific queue entry, mirrored
@@ -900,6 +910,23 @@ model DriverVehicle {
   updatedAt    DateTime @updatedAt
 
   @@index([ownerId])
+}
+
+// The tag a driver's Apple or Google Wallet pass carries. When a charge point reports it, the
+// tag is translated to the driver's current waitlist tag (see services/wallet/credentialService.js).
+model WalletCredential {
+  id        String    @id @default(cuid())
+  tenant    Tenant    @relation(fields: [tenantId], references: [id])
+  tenantId  String
+  account   Admin     @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  accountId String
+  // 12 hex characters. Unique within a site, and never reused after revocation.
+  idTag     String
+  issuedAt  DateTime  @default(now())
+  revokedAt DateTime?
+
+  @@unique([tenantId, idTag])
+  @@index([tenantId, accountId])
 }
 
 // A one-time code a driver signs in with. Only a keyed hash is stored, and each code is used once.

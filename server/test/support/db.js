@@ -30,6 +30,7 @@ export async function resetDb() {
     prisma.connector.deleteMany(),
     prisma.station.deleteMany(),
     prisma.zone.deleteMany(),
+    prisma.walletCredential.deleteMany(),
     prisma.admin.deleteMany(),
     prisma.settings.deleteMany(),
     prisma.samlConfig.deleteMany(),

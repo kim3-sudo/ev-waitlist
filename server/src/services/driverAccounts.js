@@ -61,7 +61,7 @@ export async function joinerDetails(req, body, settings) {
     const problem = contactProblem(contact);
     if (problem) return { error: { status: 400, body: { error: problem } } };
   }
-  return { name, contact };
+  return { name, contact, accountId: account?.id ?? null };
 }
 
 // A six-digit code, keyed to the site and the e-mail address, so a stored hash is useless alone.

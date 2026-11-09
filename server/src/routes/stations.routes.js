@@ -63,7 +63,7 @@ stationsRouter.post('/:id/waitlist', async (req, res) => {
   const settings = await getSettings();
   const who = await joinerDetails(req, req.body, settings);
   if (who.error) return res.status(who.error.status).json(who.error.body);
-  const { name, contact } = who;
+  const { name, contact, accountId } = who;
   const identifierError = validateIdentifiers(settings.identifierMode, { licensePlate, parkingPermit });
   if (identifierError) {
     return res.status(400).json({ error: identifierError });
@@ -84,7 +84,7 @@ stationsRouter.post('/:id/waitlist', async (req, res) => {
 
   const entry = await joinQueue(
     { stationId: station.id },
-    { name, contact, smsNumber: sms.smsNumber, licensePlate, parkingPermit, plateRegion: regionResult.plateRegion },
+    { name, contact, smsNumber: sms.smsNumber, licensePlate, parkingPermit, plateRegion: regionResult.plateRegion, accountId },
   );
 
   // In case a connector is already free right now, don't make them wait for

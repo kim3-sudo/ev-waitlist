@@ -14,6 +14,13 @@ import { notifyAdmins } from '../services/adminAlerts.js';
 import { storeMeterValues } from '../services/meterService.js';
 import { configureMetering, reapplyAvailability } from '../services/stationConfigure.js';
 import { isManualHoldAuthorized, fulfillManualHold } from '../services/manualHolds.js';
+import { translateIdTag } from '../services/wallet/credentialService.js';
+
+// An accepted idTagInfo. When the turn has an end time, it is given as expiryDate so the charge
+// point can drop the tag from its cache once the turn is over.
+function acceptedInfo(expiresAt) {
+  return expiresAt ? { status: 'Accepted', expiryDate: expiresAt.toISOString() } : { status: 'Accepted' };
+}
 
 // Runs work after the reply to the current message has gone out. Errors go to the log.
 function later(label, fn) {
@@ -155,15 +162,19 @@ export function createCentralSystem() {
     // at this station is authorized -- anyone else (a line-cutter plugging
     // in with a different card, or before their turn) is blocked.
     // Where the site requires a card hold, a waitlisted driver is authorized only once it is in place.
-    handle('Authorize', async ({ params }) => {
+    // A wallet pass tag is translated to the driver's waitlist tag first (see services/wallet).
+    handle('Authorize', async ({ params: reported }) => {
+      const { idTag, expiresAt } = await translateIdTag(stationId, reported.idTag);
       const authorized =
-        (await isWaitlistAuthorized(stationId, params.idTag)) ||
-        (await roamingAuthorize(stationId, params.idTag)).ok ||
-        (await isManualHoldAuthorized(stationId, params.idTag));
-      return { idTagInfo: { status: authorized ? 'Accepted' : 'Blocked' } };
+        (await isWaitlistAuthorized(stationId, idTag)) ||
+        (await roamingAuthorize(stationId, idTag)).ok ||
+        (await isManualHoldAuthorized(stationId, idTag));
+      return { idTagInfo: authorized ? acceptedInfo(expiresAt) : { status: 'Blocked' } };
     });
 
-    handle('StartTransaction', async ({ params }) => {
+    handle('StartTransaction', async ({ params: reported }) => {
+      const { idTag, expiresAt } = await translateIdTag(stationId, reported.idTag);
+      const params = { ...reported, idTag };
       const waitlisted = await isWaitlistAuthorized(stationId, params.idTag);
       const roaming = waitlisted ? { ok: false } : await roamingAuthorize(stationId, params.idTag);
       // An admin's manual hold for this ID tag, when the driver isn't on the waitlist.
@@ -202,7 +213,7 @@ export function createCentralSystem() {
 
       return {
         transactionId,
-        idTagInfo: { status: 'Accepted' },
+        idTagInfo: acceptedInfo(expiresAt),
       };
     });
 

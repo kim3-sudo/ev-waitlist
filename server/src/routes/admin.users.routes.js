@@ -4,6 +4,8 @@ import bcrypt from 'bcryptjs';
 import { prisma } from '../db.js';
 import { resolvePermissions, roleExists, missingPermissions } from '../services/roleService.js';
 import { DRIVER_ROLE } from '../auth/permissions.js';
+import { revokeCredentials } from '../services/wallet/credentialService.js';
+import { clearCacheEverywhere } from '../services/stationCommands.js';
 
 export const adminUsersRouter = Router();
 
@@ -137,6 +139,9 @@ adminUsersRouter.delete('/:id', async (req, res) => {
   if (remaining < 1) {
     return res.status(400).json({ error: "Can't delete the last user manager" });
   }
+
+  // A deleted account's wallet passes stop working here, and the charge points forget their tags.
+  if (await revokeCredentials(target.id)) await clearCacheEverywhere();
 
   await prisma.admin.delete({ where: { id: target.id } });
   res.status(204).end();

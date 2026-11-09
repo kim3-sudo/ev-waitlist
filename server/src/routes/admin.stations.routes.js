@@ -32,6 +32,7 @@ function serialize(station) {
     parkingKeys: readParkingKeys(station.parkingKeys),
     zoneId: station.zoneId,
     zoneName: station.zone?.name ?? null,
+    walletTap: Boolean(station.walletTap),
     online: registry.isConnected(station.identity),
     lastSeenAt: station.lastSeenAt ?? null,
     offlineSince: station.offlineSince ?? null,
@@ -388,6 +389,13 @@ adminStationsRouter.get('/:id/status', async (req, res) => {
   });
 });
 
+// Whether the charge point has an NFC reader that accepts wallet passes. Only true or false is accepted.
+function walletTapProblem(value) {
+  if (value === undefined) return { value: undefined };
+  if (typeof value !== 'boolean') return { error: 'walletTap must be true or false' };
+  return { value };
+}
+
 adminStationsRouter.post('/', async (req, res) => {
   const { identity, name, vendor, model, location, connectorCount, zoneId, latitude, longitude, connectors } = req.body ?? {};
   const coordsProblem = coordinatesProblem(latitude, longitude);
@@ -398,6 +406,8 @@ adminStationsRouter.post('/', async (req, res) => {
   if (tips.error) return res.status(400).json({ error: tips.error });
   const parking = normalizeParkingKeys(req.body?.parkingKeys);
   if (parking.error) return res.status(400).json({ error: parking.error });
+  const wallet = walletTapProblem(req.body?.walletTap);
+  if (wallet.error) return res.status(400).json({ error: wallet.error });
   const newCount = Math.max(0, Number(connectorCount) || 1);
   const detailsProblem = connectorDetailsError(connectors, new Set(Array.from({ length: newCount }, (_, i) => i + 1)));
   if (detailsProblem) return res.status(400).json({ error: detailsProblem });
@@ -428,6 +438,7 @@ adminStationsRouter.post('/', async (req, res) => {
       ...textFields.fields,
       tips: tips.value,
       parkingKeys: parking.value ?? null,
+      walletTap: wallet.value ?? false,
     },
   });
 
@@ -452,6 +463,8 @@ adminStationsRouter.put('/:id', async (req, res) => {
   if (tips.error) return res.status(400).json({ error: tips.error });
   const parking = normalizeParkingKeys(req.body?.parkingKeys);
   if (parking.error) return res.status(400).json({ error: parking.error });
+  const wallet = walletTapProblem(req.body?.walletTap);
+  if (wallet.error) return res.status(400).json({ error: wallet.error });
 
   const station = await prisma.station.findUnique({ where: { id: req.params.id } });
   if (!station) return res.status(404).json({ error: 'Station not found' });
@@ -491,6 +504,8 @@ adminStationsRouter.put('/:id', async (req, res) => {
       tips: tips.value,
       // Likewise for parking: only changed when the list is sent.
       ...(parking.value !== undefined && { parkingKeys: parking.value }),
+      // Left alone when the request does not send it.
+      ...(wallet.value !== undefined && { walletTap: wallet.value }),
     },
   });
 

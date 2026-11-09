@@ -150,6 +150,17 @@ export const HELP_ARTICLES = [
           </li>
         </Steps>
         <Typography variant="h6" gutterBottom>
+          Accept wallet passes
+        </Typography>
+        <Para>
+          If your charger has an NFC reader that can read Apple Wallet or Google Wallet passes, select{' '}
+          <strong>Accepts wallet passes (tap to start)</strong> on the charge point form. Drivers who have added a pass
+          can then tap their phone on the reader to start charging when it is their turn. Leave the box clear if the
+          reader accepts only cards. Your reader vendor can confirm which kind of reader you have, and a reader that
+          cannot read passes will refuse them.
+        </Para>
+
+        <Typography variant="h6" gutterBottom>
           Choose a connector standard
         </Typography>
         <Para>

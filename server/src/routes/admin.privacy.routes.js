@@ -3,6 +3,7 @@ import { prisma, rawPrisma } from '../db.js';
 import { currentTenantId } from '../tenancy/context.js';
 import { clearCacheEverywhere } from '../services/stationCommands.js';
 import { recordAudit } from '../audit/record.js';
+import { revokeCredentials } from '../services/wallet/credentialService.js';
 
 // Mounted behind privacy.manage. Retention periods for this site, and early
 // erasure of one driver's personal data.
@@ -103,9 +104,12 @@ adminPrivacyRouter.post('/erase', async (req, res) => {
     }),
     prisma.queueEntry.update({
       where: { id: entry.id },
-      data: { name: '', contact: '', smsNumber: null, licensePlate: null, plateRegion: null, parkingPermit: null },
+      data: { name: '', contact: '', smsNumber: null, licensePlate: null, plateRegion: null, parkingPermit: null, accountId: null },
     }),
   ]);
+
+  // The driver's wallet pass is personal too: revoke it, so the tag stops working here and in the charge points.
+  const walletCredentialsRevoked = entry.accountId ? await revokeCredentials(entry.accountId) : 0;
 
   // Charge points may still hold this driver's ID tag in their authorization cache.
   const cacheClearedStations = await clearCacheEverywhere();
@@ -121,7 +125,7 @@ adminPrivacyRouter.post('/erase', async (req, res) => {
       targetType: 'queue_entry',
       targetId: entry.id,
       outcome: 'SUCCESS',
-      reason: `${complaints.count} complaint notes, ${charges.count} charges, ${holds.count} holds cleared`,
+      reason: `${complaints.count} complaint notes, ${charges.count} charges, ${holds.count} holds cleared, ${walletCredentialsRevoked} wallet passes revoked`,
       ip: req.ip,
       userAgent: req.headers['user-agent'],
     },
@@ -133,6 +137,7 @@ adminPrivacyRouter.post('/erase', async (req, res) => {
     complaintNotesCleared: complaints.count,
     chargesCleared: charges.count,
     holdsCleared: holds.count,
+    walletCredentialsRevoked,
     cacheClearedStations,
   });
 });

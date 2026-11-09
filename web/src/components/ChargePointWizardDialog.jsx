@@ -13,6 +13,8 @@ import {
   Stepper,
   TextField,
   Typography,
+  Checkbox,
+  FormControlLabel,
 } from '@mui/material';
 import { api } from '../api/client.js';
 import { ConnectorFields } from './ConnectorFields.jsx';
@@ -38,6 +40,7 @@ const emptyForm = {
   vendor: '',
   model: '',
   zoneId: '',
+  walletTap: false,
   connectorCount: 1,
   // Connector details keyed by connector number. Optional, but needed for roaming.
   connectors: {},
@@ -190,6 +193,7 @@ export function ChargePointWizard({
         vendor: form.vendor.trim(),
         model: form.model.trim(),
         zoneId: form.zoneId,
+        walletTap: form.walletTap,
         connectorCount: Number(form.connectorCount),
         connectors: connectorsPayload(form.connectorCount, form.connectors),
       });
@@ -269,6 +273,15 @@ export function ChargePointWizard({
                   </MenuItem>
                 ))}
               </TextField>
+              <FormControlLabel
+                control={
+                  <Checkbox
+                    checked={form.walletTap}
+                    onChange={(e) => setForm((f) => ({ ...f, walletTap: e.target.checked }))}
+                  />
+                }
+                label="Accepts wallet passes (tap to start)"
+              />
             </>
           )}
 
@@ -306,6 +319,7 @@ export function ChargePointWizard({
                 <ReviewRow label="Location" value={form.location.trim()} />
                 <ReviewRow label="Vendor / model" value={[form.vendor.trim(), form.model.trim()].filter(Boolean).join(' ')} />
                 <ReviewRow label="Zone" value={form.zoneId ? zoneName : 'Standalone (no zone)'} />
+                <ReviewRow label="Accepts wallet passes" value={form.walletTap ? 'Yes' : 'No'} />
                 <ReviewRow label="Connectors" value={String(form.connectorCount)} />
                 {connectorsPayload(form.connectorCount, form.connectors).map((c) => (
                   <ReviewRow

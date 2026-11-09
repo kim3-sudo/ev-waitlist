@@ -1,5 +1,6 @@
 import { prisma, rawPrisma } from '../db.js';
 import { runWithTenant, currentTenantId } from '../tenancy/context.js';
+import { revokeStaleCredentials } from './wallet/credentialService.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const CLOSED_STATUSES = ['COMPLETED', 'EXPIRED', 'CANCELLED'];
@@ -20,8 +21,12 @@ export async function sweepRetention(now = new Date()) {
   const queueCutoff = new Date(now.getTime() - tenant.queueRetentionDays * DAY_MS);
   const queue = await prisma.queueEntry.updateMany({
     where: { status: { in: CLOSED_STATUSES }, closedAt: { lt: queueCutoff }, contact: { not: '' } },
-    data: { name: '', contact: '', smsNumber: null, licensePlate: null, plateRegion: null, parkingPermit: null },
+    data: { name: '', contact: '', smsNumber: null, licensePlate: null, plateRegion: null, parkingPermit: null, accountId: null },
   });
+
+  // Wallet passes: a closed entry no longer links to its driver account, and passes that have gone
+  // unused for the queue period are revoked (see services/wallet/credentialService.js).
+  const walletCredentials = await revokeStaleCredentials(queueCutoff, now);
 
   // Complaints: the free-text note goes once the complaint has been resolved or
   // dismissed for the queue period.
@@ -59,6 +64,7 @@ export async function sweepRetention(now = new Date()) {
 
   return {
     queueEntries: queue.count,
+    walletCredentials,
     complaints: complaints.count,
     charges: charges.count,
     holds: holds.count,

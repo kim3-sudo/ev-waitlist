@@ -54,7 +54,7 @@ zonesRouter.post('/:id/waitlist', async (req, res) => {
   const settings = await getSettings();
   const who = await joinerDetails(req, req.body, settings);
   if (who.error) return res.status(who.error.status).json(who.error.body);
-  const { name, contact } = who;
+  const { name, contact, accountId } = who;
   const identifierError = validateIdentifiers(settings.identifierMode, { licensePlate, parkingPermit });
   if (identifierError) {
     return res.status(400).json({ error: identifierError });
@@ -72,7 +72,7 @@ zonesRouter.post('/:id/waitlist', async (req, res) => {
 
   const entry = await joinQueue(
     { zoneId: zone.id },
-    { name, contact, smsNumber: sms.smsNumber, licensePlate, parkingPermit, plateRegion: regionResult.plateRegion },
+    { name, contact, smsNumber: sms.smsNumber, licensePlate, parkingPermit, plateRegion: regionResult.plateRegion, accountId },
   );
 
   // In case a connector somewhere in the zone is already free right now,

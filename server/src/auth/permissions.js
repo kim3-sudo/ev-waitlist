@@ -28,6 +28,7 @@ export const PERMISSIONS = [
   // Driver features: the account's own vehicles and details. Every admin role has it, and the
   // driver role has only it, so a driver account cannot reach the admin pages.
   { key: 'driver.account', group: 'Driver accounts', label: 'Use a driver account: manage own vehicles and details' },
+  { key: 'wallet.manage', group: 'Wallet passes', label: 'Set up Apple and Google Wallet passes and card designs' },
 
   // Held by service accounts (API keys), not by people. See routes/api.v1.
   { key: 'api.stations.read', group: 'API (service accounts)', label: 'Read charge points and their status' },
