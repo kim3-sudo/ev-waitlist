@@ -11,7 +11,7 @@ export function setPublicSite(slug) {
   publicSite = slug || null;
 }
 
-const PUBLIC_PATHS = ['/api/stations', '/api/zones', '/api/notices', '/api/waitlist', '/api/pay', '/api/settings', '/api/locator', '/api/pricing', '/api/driver'];
+const PUBLIC_PATHS = ['/api/stations', '/api/zones', '/api/notices', '/api/waitlist', '/api/pay', '/api/settings', '/api/locator', '/api/pricing', '/api/driver', '/api/auth/code'];
 
 // The address a request to `url` really goes to: public paths move under the site's prefix.
 export function resolveApiPath(url) {

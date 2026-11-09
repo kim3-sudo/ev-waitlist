@@ -85,15 +85,18 @@ export function AuthProvider({ children }) {
         if (data.mfaRequired) return { done: false, stage: 'mfa', preAuthToken: data.preAuthToken };
         if (data.mfaSetupRequired) return { done: false, stage: 'mfa-setup', preAuthToken: data.preAuthToken };
         setSession(data.token, data.email, data.mustChangePassword, data.role, data.permissions);
-        return { done: true };
+        return { done: true, permissions: data.permissions };
       },
+      // Each of these returns the permissions granted, so the sign-in page can pick where to go.
       async completeMfa(preAuthToken, code) {
         const { data } = await api.post('/api/auth/mfa/verify', { preAuthToken, code });
         setSession(data.token, data.email, data.mustChangePassword, data.role, data.permissions);
+        return data.permissions;
       },
       async completeMfaSetup(preAuthToken, secret, code) {
         const { data } = await api.post('/api/auth/mfa/setup/confirm', { preAuthToken, secret, code });
         setSession(data.token, data.email, data.mustChangePassword, data.role, data.permissions);
+        return data.permissions;
       },
       setSession,
       clearPasswordChange() {

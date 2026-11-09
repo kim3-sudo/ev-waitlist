@@ -40,12 +40,13 @@ export function MfaEnrollForm({ preAuthToken, onDone }) {
     setError('');
     setSubmitting(true);
     try {
+      let permissions;
       if (preAuthToken) {
-        await completeMfaSetup(preAuthToken, secret, code);
+        permissions = await completeMfaSetup(preAuthToken, secret, code);
       } else {
         await api.post('/api/auth/mfa/setup/confirm', { secret, code });
       }
-      onDone?.();
+      onDone?.(permissions);
     } catch {
       setError('Invalid code. Check your authenticator app and try again.');
     } finally {

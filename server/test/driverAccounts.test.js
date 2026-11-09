@@ -24,7 +24,7 @@ function bearer(token) {
 // Signs a driver in with a fresh one-time code, the way the driver page does.
 async function signInDriver(email, name) {
   const { code } = await issueSignInCode(email);
-  const res = await request(app).post('/api/driver/code/verify').send({ email, code, name });
+  const res = await request(app).post('/api/auth/code/verify').send({ email, code, name });
   assert.equal(res.status, 200, JSON.stringify(res.body));
   return res.body.token;
 }
@@ -46,7 +46,7 @@ async function makeStation(identity = 'CP-JOIN') {
 describe('driver sign-in', () => {
   it('a sign-in code is sent by e-mail, and the reply does not say whether the account exists', async () => {
     // Tests have no e-mail set up, so the request is refused with a clear message rather than sent.
-    const res = await request(app).post('/api/driver/code/request').send({ email: 'dana@example.test' });
+    const res = await request(app).post('/api/auth/code/request').send({ email: 'dana@example.test' });
     assert.equal(res.status, 503);
     assert.equal(res.body.code, 'EMAIL_NOT_SET_UP');
   });
@@ -64,12 +64,12 @@ describe('driver sign-in', () => {
   it('refuses a wrong code, and a code cannot be used twice', async () => {
     const { code } = await issueSignInCode('sam@example.test');
     const wrong = code === '000000' ? '111111' : '000000';
-    const bad = await request(app).post('/api/driver/code/verify').send({ email: 'sam@example.test', code: wrong });
+    const bad = await request(app).post('/api/auth/code/verify').send({ email: 'sam@example.test', code: wrong });
     assert.equal(bad.status, 401);
 
-    const good = await request(app).post('/api/driver/code/verify').send({ email: 'sam@example.test', code });
+    const good = await request(app).post('/api/auth/code/verify').send({ email: 'sam@example.test', code });
     assert.equal(good.status, 200);
-    const again = await request(app).post('/api/driver/code/verify').send({ email: 'sam@example.test', code });
+    const again = await request(app).post('/api/auth/code/verify').send({ email: 'sam@example.test', code });
     assert.equal(again.status, 401);
   });
 
@@ -77,18 +77,18 @@ describe('driver sign-in', () => {
     const { code } = await issueSignInCode('lee@example.test');
     const wrong = code === '000000' ? '111111' : '000000';
     for (let i = 0; i < 5; i += 1) {
-      await request(app).post('/api/driver/code/verify').send({ email: 'lee@example.test', code: wrong });
+      await request(app).post('/api/auth/code/verify').send({ email: 'lee@example.test', code: wrong });
     }
-    const res = await request(app).post('/api/driver/code/verify').send({ email: 'lee@example.test', code });
+    const res = await request(app).post('/api/auth/code/verify').send({ email: 'lee@example.test', code });
     assert.equal(res.status, 401);
   });
 
   it('an admin e-mail cannot sign in with a code, so two-factor sign-in cannot be skipped', async () => {
     const admin = await prisma.admin.findFirst({ where: { role: 'ADMIN' } });
     const { code } = await issueSignInCode(admin.email);
-    const res = await request(app).post('/api/driver/code/verify').send({ email: admin.email, code });
+    const res = await request(app).post('/api/auth/code/verify').send({ email: admin.email, code });
     assert.equal(res.status, 403);
-    assert.match(res.body.error, /admin sign-in page/);
+    assert.equal(res.body.code, 'PASSWORD_SIGN_IN_REQUIRED');
   });
 });
 
@@ -115,12 +115,13 @@ describe('driver accounts and the admin pages', () => {
     const set = await request(app).put('/api/driver/password').set(bearer(token)).send({ newPassword: 'PlugAndGo2026' });
     assert.equal(set.status, 200);
 
-    const driverLogin = await request(app).post('/api/driver/login').send({ email: 'dana@example.test', password: 'PlugAndGo2026' });
-    assert.equal(driverLogin.status, 200);
-    assert.equal(driverLogin.body.role, 'DRIVER');
-
-    const adminLogin = await request(app).post('/api/auth/login').send({ email: 'dana@example.test', password: 'PlugAndGo2026' });
-    assert.equal(adminLogin.status, 403);
+    // Driver accounts use the same sign-in as admins, and get a session without a second factor.
+    const login = await request(app).post('/api/auth/login').send({ email: 'dana@example.test', password: 'PlugAndGo2026' });
+    assert.equal(login.status, 200);
+    assert.equal(login.body.role, 'DRIVER');
+    assert.equal(login.body.mfaRequired, undefined);
+    const me = await request(app).get('/api/driver/me').set(bearer(login.body.token));
+    assert.equal(me.status, 200);
   });
 
   it('changing a password needs the current one', async () => {

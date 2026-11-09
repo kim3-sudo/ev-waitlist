@@ -7,7 +7,7 @@ import { prisma } from '../db.js';
 import { config } from '../config.js';
 import { getSettings } from '../services/settingsService.js';
 import { resolvePermissions } from '../services/roleService.js';
-import { isDriverAccount } from '../services/driverAccounts.js';
+import { driverSession, isDriverAccount } from '../services/driverAccounts.js';
 import { requireAdmin, requireAdminAllowingPasswordChange } from './auth.middleware.js';
 import { tenantForAdminEmail, tenantFromAdminToken } from '../tenancy/middleware.js';
 import { recordAudit } from '../audit/record.js';
@@ -98,14 +98,16 @@ authRouter.post('/login', tenantForAdminEmail, async (req, res) => {
     return res.status(400).json({ error: 'email and password are required' });
   }
 
+  // One sign-in for everyone. Admins (any account with more than the driver permission) get the
+  // two-factor step; driver accounts sign in with the password alone.
   const admin = await prisma.admin.findUnique({ where: { email } });
   if (!admin || !admin.passwordHash || !(await bcrypt.compare(password, admin.passwordHash))) {
     auditSignIn(req, res, { admin: null, email, outcome: 'FAILED', reason: 'wrong e-mail or password' });
-    return res.status(401).json({ error: 'Invalid credentials' });
+    return res.status(401).json({ error: 'Invalid e-mail address or password' });
   }
-  // Driver accounts sign in on the driver sign-in page. Only admins get the two-factor step here.
   if (await isDriverAccount(admin)) {
-    return res.status(403).json({ error: 'This is a driver account. Sign in on the driver sign-in page.' });
+    auditSignIn(req, res, { admin, email, outcome: 'SUCCESS', reason: 'signed in' });
+    return res.json(await driverSession(admin));
   }
 
   if (admin.mfaEnabled) {

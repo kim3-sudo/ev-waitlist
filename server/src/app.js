@@ -14,6 +14,7 @@ import { adminSubscriptionsRouter } from './routes/admin.subscriptions.routes.js
 import { adminLoadBalancingRouter } from './routes/admin.loadBalancing.routes.js';
 import { adminEmailRouter, adminSmsRouter } from './routes/admin.notifications.routes.js';
 import { authRouter } from './auth/auth.routes.js';
+import { signInCodeRouter } from './auth/signInCode.routes.js';
 import { samlRouter } from './auth/saml.routes.js';
 import { requireAdmin, requirePermission, requireReadOrManage } from './auth/auth.middleware.js';
 import { stationsRouter } from './routes/stations.routes.js';
@@ -80,6 +81,7 @@ export function createApp() {
   app.get('/api/health', (req, res) => res.json({ ok: true }));
 
   app.use('/api/auth', authRouter);
+  app.use('/api/auth/code', signInCodeRouter);
   app.use('/api/auth/saml', samlRouter);
   app.use('/api/stations', stationsRouter);
   app.use('/api/zones', zonesRouter);
@@ -88,7 +90,7 @@ export function createApp() {
   app.use('/api/notices', noticesRouter);
   app.use('/api/pricing', pricingRouter);
   app.use('/api/waitlist', waitlistRouter);
-  // Driver accounts: sign-in, the account's details and vehicles.
+  // Driver accounts: the account's details and vehicles.
   app.use('/api/driver', driverRouter);
   // The public REST API. Its routes authenticate with API keys, not admin sessions.
   app.use('/api/v1', apiV1Router);
@@ -127,6 +129,7 @@ export function createApp() {
   // The public, driver-facing routes for a named site, under /api/t/<slug>. The
   // un-prefixed routes above serve the default site.
   const sitePublicRouter = Router();
+  sitePublicRouter.use('/auth/code', signInCodeRouter);
   sitePublicRouter.use('/auth/saml', samlRouter);
   sitePublicRouter.use('/stations', stationsRouter);
   sitePublicRouter.use('/zones', zonesRouter);

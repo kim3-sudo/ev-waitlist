@@ -2,8 +2,8 @@ import { Navigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
 
 // Requires a signed-in account. Anyone still on a first-run passphrase is sent
-// to the change-passphrase screen, unless this route is that screen. Driver pages
-// send people to the driver sign-in instead of the admin one.
+// to the change-passphrase screen, unless this route is that screen. Signing in is
+// one page for everyone, so the default sends people there.
 export function ProtectedRoute({ children, allowPasswordChange = false, signInPath = '/login' }) {
   const { isAuthenticated, mustChangePassword } = useAuth();
   if (!isAuthenticated) return <Navigate to={signInPath} replace />;

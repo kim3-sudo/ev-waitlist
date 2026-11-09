@@ -176,7 +176,7 @@ export function WaitlistJoinDialog({ target, mode = 'join', onClose, onJoined })
               <Button
                 component={RouterLink}
                 variant="contained"
-                to={`${sitePath('/sign-in')}?next=${encodeURIComponent(window.location.pathname + window.location.search)}`}
+                to={`${sitePath('/login')}?next=${encodeURIComponent(window.location.pathname + window.location.search)}`}
               >
                 Sign in or create an account
               </Button>

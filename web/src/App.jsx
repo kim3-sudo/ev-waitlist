@@ -47,7 +47,6 @@ import { AdminSitesPage } from './pages/AdminSitesPage.jsx';
 import { AdminPrivacyPage } from './pages/AdminPrivacyPage.jsx';
 import { AdminRoamingPage } from './pages/AdminRoamingPage.jsx';
 import { AdminLocationPage } from './pages/AdminLocationPage.jsx';
-import { DriverSignInPage } from './pages/DriverSignInPage.jsx';
 import { DriverAccountPage } from './pages/DriverAccountPage.jsx';
 import { sitePath } from './sitePaths.js';
 
@@ -71,19 +70,21 @@ export default function App() {
           }
         />
         <Route path="/login" element={<LoginPage />} />
-        <Route path="/sign-in" element={<DriverSignInPage />} />
         <Route
-          path="/t/:slug/sign-in"
+          path="/t/:slug/login"
           element={
             <SiteScope>
-              <DriverSignInPage />
+              <LoginPage />
             </SiteScope>
           }
         />
+        {/* The old driver sign-in address. Sign-in is one page now. */}
+        <Route path="/sign-in" element={<Navigate to="../login" replace />} />
+        <Route path="/t/:slug/sign-in" element={<Navigate to="../login" replace />} />
         <Route
           path="/driver"
           element={
-            <ProtectedRoute signInPath={sitePath('/sign-in')}>
+            <ProtectedRoute signInPath={sitePath('/login')}>
               <DriverAccountPage />
             </ProtectedRoute>
           }
@@ -92,7 +93,7 @@ export default function App() {
           path="/t/:slug/driver"
           element={
             <SiteScope>
-              <ProtectedRoute signInPath={sitePath('/sign-in')}>
+              <ProtectedRoute signInPath={sitePath('/login')}>
                 <DriverAccountPage />
               </ProtectedRoute>
             </SiteScope>

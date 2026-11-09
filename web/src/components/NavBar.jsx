@@ -155,11 +155,8 @@ function CollapsedNavMenu({ email, isAuthenticated, hasAdminAccess, canDrive, on
           ]
         ) : (
           [
-            <MenuItem key="sign-in" component={RouterLink} to={sitePath('/sign-in')} onClick={close}>
+            <MenuItem key="sign-in" component={RouterLink} to={sitePath('/login')} onClick={close}>
               Sign in
-            </MenuItem>,
-            <MenuItem key="admin-login" component={RouterLink} to="/login" onClick={close}>
-              Admin login
             </MenuItem>,
           ]
         )}
@@ -244,11 +241,8 @@ export function NavBar() {
               <ProfileMenu email={email} onLogout={handleLogout} hasAdminAccess={hasAdminAccess} canDrive={canDrive} />
             ) : (
               <>
-                <Button component={RouterLink} to={sitePath('/sign-in')} color="inherit">
+                <Button component={RouterLink} to={sitePath('/login')} color="inherit" variant="outlined">
                   Sign in
-                </Button>
-                <Button component={RouterLink} to="/login" color="inherit" variant="outlined">
-                  Admin login
                 </Button>
               </>
             )}
