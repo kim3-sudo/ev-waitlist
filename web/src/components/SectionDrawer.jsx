@@ -18,15 +18,15 @@ export function SectionDrawer({ sections, currentPath, onNavigate, label, childr
         variant="permanent"
         aria-label={label}
         sx={{
-          // The drawer is pinned to the top of the window while the content scrolls, and it
-          // scrolls its own list when the list is longer than the window.
+          // The navbar is sticky, so the drawer sits just below it and stays there while the
+          // content scrolls. It scrolls its own list when the list is longer than the space.
           display: { xs: 'none', md: 'block' },
           position: 'sticky',
-          top: 0,
+          top: 'var(--navbar-height, 64px)',
           alignSelf: 'flex-start',
           width: DRAWER_WIDTH,
           flexShrink: 0,
-          height: 'calc(100dvh - 64px)',
+          height: 'calc(100dvh - var(--navbar-height, 64px))',
           '& .MuiDrawer-paper': {
             position: 'relative',
             width: DRAWER_WIDTH,

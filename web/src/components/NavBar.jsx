@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import {
   AppBar,
   Toolbar,
@@ -175,6 +175,22 @@ export function NavBar() {
   const { settings } = useSettings();
   const navigate = useNavigate();
   const collapsed = useMediaQuery((theme) => theme.breakpoints.down('md'));
+  const barRef = useRef(null);
+
+  // The navbar's real height depends on the screen (48px on a landscape phone, 56px on a
+  // narrow portrait screen, 64px otherwise). Publish it so the sidebars can size and pin
+  // themselves against it instead of assuming 64px.
+  useLayoutEffect(() => {
+    const bar = barRef.current;
+    if (!bar) return undefined;
+    const apply = () => {
+      document.documentElement.style.setProperty('--navbar-height', `${bar.offsetHeight}px`);
+    };
+    apply();
+    const observer = new ResizeObserver(apply);
+    observer.observe(bar);
+    return () => observer.disconnect();
+  }, []);
 
   const handleLogout = () => {
     logout();
@@ -182,7 +198,7 @@ export function NavBar() {
   };
 
   return (
-    <AppBar position="static" color="primary" elevation={0}>
+    <AppBar ref={barRef} position="sticky" color="primary" elevation={0}>
       <Toolbar sx={{ gap: 1 }}>
         {settings.logoUrl ? (
           <Avatar src={settings.logoUrl} variant="rounded" sx={{ mr: 1, width: 32, height: 32, flexShrink: 0 }} />

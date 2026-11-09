@@ -38,9 +38,10 @@ export function HelpPage() {
           flexDirection: { xs: 'column', md: 'row' },
           gap: 3,
           alignItems: 'stretch',
-          // A fixed height on wide screens, so the list and the article each scroll on their own.
-          height: { md: 'calc(100dvh - 200px)' },
-          minHeight: { md: 420 },
+          // A height that fits the window below the navbar, so the list and the article each
+          // scroll on their own. It must not have a larger minimum: a box taller than the
+          // window makes the whole page scroll and drags the topic list along with the navbar.
+          height: { md: 'max(200px, calc(100dvh - var(--navbar-height, 64px) - 136px))' },
         }}
       >
         <Paper

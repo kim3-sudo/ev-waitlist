@@ -11,6 +11,8 @@ import {
   Alert,
   Typography,
   Divider,
+  Checkbox,
+  FormControlLabel,
 } from '@mui/material';
 import { api } from '../api/client.js';
 import { ConnectorFields } from './ConnectorFields.jsx';
@@ -36,6 +38,7 @@ const emptyForm = {
   parkingKeys: [],
   connectorCount: 1,
   zoneId: '',
+  walletTap: false,
 };
 
 export function StationFormDialog({ station, onClose, onSaved }) {
@@ -59,6 +62,7 @@ export function StationFormDialog({ station, onClose, onSaved }) {
           parkingKeys: station.parkingKeys ?? [],
           connectorCount: station.connectors.length || 1,
           zoneId: station.zoneId ?? '',
+          walletTap: Boolean(station.walletTap),
         }
       : emptyForm,
   );
@@ -228,6 +232,18 @@ export function StationFormDialog({ station, onClose, onSaved }) {
                 </MenuItem>
               ))}
             </TextField>
+            <FormControlLabel
+              control={
+                <Checkbox
+                  checked={form.walletTap}
+                  onChange={(e) => setForm((f) => ({ ...f, walletTap: e.target.checked }))}
+                />
+              }
+              label="Accepts wallet passes (tap to start)"
+            />
+            <Typography variant="body2" color="text.secondary" sx={{ mt: -2 }}>
+              Turn this on only if the charge point's NFC reader can read Apple or Google Wallet passes. Your reader vendor can confirm this.
+            </Typography>
 
             <Divider />
 
