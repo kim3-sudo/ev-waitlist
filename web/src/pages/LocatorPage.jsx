@@ -245,7 +245,7 @@ export function LocatorPage() {
       locating={locating}
       onNearMe={nearMeClick}
       nearMeActive={Boolean(nearMe)}
-      vertical={view === 'map'}
+      vertical
       vehiclePlugs={vehiclePlugs}
       onUseVehiclePlugs={() => changeFilters({ ...filters, standard: vehiclePlugs })}
     />
@@ -284,17 +284,14 @@ export function LocatorPage() {
               <ToggleButton value="list">List</ToggleButton>
               <ToggleButton value="sites">By site</ToggleButton>
             </ToggleButtonGroup>
-            {view === 'map' && (
-              <Badge badgeContent={activeCount} color="primary" overlap="circular">
-                <Button variant="outlined" size="small" startIcon={<FilterListIcon />} onClick={() => setFiltersOpen(true)}>
-                  Filters
-                </Button>
-              </Badge>
-            )}
+            <Badge badgeContent={activeCount} color="primary" overlap="circular">
+              <Button variant="outlined" size="small" startIcon={<FilterListIcon />} onClick={() => setFiltersOpen(true)}>
+                Filters
+              </Button>
+            </Badge>
           </Stack>
         </Stack>
 
-        {view !== 'map' && filterControls}
 
         {locationError && <Alert severity="warning" onClose={() => setLocationError(null)}>{locationError}</Alert>}
         {loadError && <Alert severity="error">{loadError}</Alert>}
@@ -321,7 +318,7 @@ export function LocatorPage() {
 
       <Drawer
         anchor="left"
-        open={filtersOpen && view === 'map'}
+        open={filtersOpen}
         onClose={() => setFiltersOpen(false)}
         slotProps={{ paper: { sx: { width: { xs: '100%', sm: 380 }, p: 2.5 } } }}
       >
