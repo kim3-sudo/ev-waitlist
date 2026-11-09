@@ -8,19 +8,24 @@ import {
   Container,
   Drawer,
   IconButton,
+  InputAdornment,
   Stack,
+  TextField,
   ToggleButton,
   ToggleButtonGroup,
   Typography,
 } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
 import FilterListIcon from '@mui/icons-material/FilterList';
+import SearchIcon from '@mui/icons-material/Search';
 import { api } from '../api/client.js';
 import { LocatorFilters, activeFilterCount } from '../components/locator/LocatorFilters.jsx';
 import { ChargerList } from '../components/locator/ChargerList.jsx';
 import { SiteList } from '../components/locator/SiteList.jsx';
 import { ChargerDetailDrawer } from '../components/locator/ChargerDetailDrawer.jsx';
 import { ChargerMap } from '../components/locator/ChargerMap.jsx';
+import { LoadMore } from '../components/locator/LoadMore.jsx';
+import { usePagedLocator } from '../components/locator/usePagedLocator.js';
 import { WaitlistJoinDialog } from '../components/WaitlistJoinDialog.jsx';
 import { WaitlistStatusCard } from '../components/WaitlistStatusCard.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
@@ -32,6 +37,10 @@ import { SiteNotices } from '../components/DriverNotices.jsx';
 const VIEWS = ['map', 'list', 'sites'];
 const POLL_MS = 15000;
 const MY_ENTRIES_KEY = 'myWaitlistEntries';
+// How many charge points or sites each page of the list shows, and the most the map draws.
+const CHARGER_PAGE = 25;
+const SITE_PAGE = 10;
+const MAP_LIMIT = 500;
 
 // Each list filter is stored in the address as comma-separated keys.
 const listOf = (params, key) => params.get(key)?.split(',').filter(Boolean) ?? [];
@@ -77,6 +86,42 @@ function saveMyEntries(entries) {
   }
 }
 
+// The search above the list and by-site views. It waits for a pause in typing before it
+// searches, so each keystroke does not ask the server again. It follows the address when the
+// search changes elsewhere, such as Clear all in the filters.
+function SearchBox({ value, onSearch, placeholder }) {
+  const [text, setText] = useState(value);
+  useEffect(() => {
+    setText(value);
+  }, [value]);
+  useEffect(() => {
+    if (text === value) return undefined;
+    const timer = setTimeout(() => onSearch(text), 300);
+    return () => clearTimeout(timer);
+    // Only typing starts the wait. A change from the address is not sent back.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [text]);
+  return (
+    <TextField
+      size="small"
+      fullWidth
+      placeholder={placeholder}
+      aria-label={placeholder}
+      value={text}
+      onChange={(e) => setText(e.target.value)}
+      slotProps={{
+        input: {
+          startAdornment: (
+            <InputAdornment position="start">
+              <SearchIcon fontSize="small" />
+            </InputAdornment>
+          ),
+        },
+      }}
+    />
+  );
+}
+
 export function LocatorPage() {
   const [params, setParams] = useSearchParams();
   const view = VIEWS.includes(params.get('view')) ? params.get('view') : 'map';
@@ -86,16 +131,13 @@ export function LocatorPage() {
   const [nearMe, setNearMe] = useState(null);
   const [locating, setLocating] = useState(false);
   const [locationError, setLocationError] = useState(null);
-  const [data, setData] = useState({ stations: [], sites: [] });
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState(null);
   const [notices, setNotices] = useState({ alerts: [], pricing: [], paymentOutage: null });
 
   // The driver's own waitlist entries, and what happened when each was made this visit.
   const [myEntries, setMyEntries] = useState(loadMyEntries);
   const [joinNotes, setJoinNotes] = useState({});
   const [joinTarget, setJoinTarget] = useState(null);
-  // On the map the filters sit in a panel, so the map has the room.
+  // The filters sit in a panel, so the list and the map have the room.
   const [filtersOpen, setFiltersOpen] = useState(false);
   // A signed-in driver's vehicles, and the plugs they can charge with between them.
   const { can } = useAuth();
@@ -167,11 +209,9 @@ export function LocatorPage() {
     );
   }
 
-  // Loads the charge points for the current view and filters. It runs again on a timer, so
-  // availability stays current while a driver waits.
-  useEffect(() => {
-    let cancelled = false;
-    const query = {
+  // The filters as the server takes them.
+  const filterQuery = useMemo(
+    () => ({
       ...(filters.q && { q: filters.q }),
       ...(filters.standard.length && { standard: filters.standard.join(',') }),
       ...(filters.types.length && { type: filters.types.join(',') }),
@@ -182,28 +222,29 @@ export function LocatorPage() {
       ...(filters.available && { available: 1 }),
       ...(filters.sort && { sort: filters.sort }),
       ...(nearMe && { lat: nearMe.lat, lng: nearMe.lng }),
-    };
-    const path = view === 'sites' ? '/api/locator/sites' : '/api/locator/stations';
-    const load = () =>
-      api
-        .get(path, { params: query })
-        .then((res) => {
-          if (cancelled) return;
-          setLoadError(null);
-          setData({
-            stations: res.data.stations ?? [],
-            sites: res.data.sites ?? [],
-          });
-        })
-        .catch(() => !cancelled && setLoadError('Charge points could not be loaded. Try again in a moment.'))
-        .finally(() => !cancelled && setLoading(false));
-    load();
-    const timer = setInterval(load, POLL_MS);
-    return () => {
-      cancelled = true;
-      clearInterval(timer);
-    };
-  }, [view, filters, nearMe]);
+    }),
+    [filters, nearMe],
+  );
+
+  // A new view or new filters start the results again from the top.
+  const resetKey = `${view}|${JSON.stringify(filterQuery)}`;
+
+  // The map asks only for the charge points in the area on screen. The box is kept against the
+  // filters it was drawn for, so a change of filters asks for everything again, and the map
+  // frames the new results.
+  const [mapView, setMapView] = useState(null);
+  const onViewport = useCallback((bbox) => setMapView({ key: resetKey, bbox }), [resetKey]);
+  const isMap = view === 'map';
+  const isSites = view === 'sites';
+  const mapBbox = isMap && mapView?.key === resetKey ? mapView.bbox : null;
+
+  const { items, count, hasMore, loading, loadingMore, error, loadMore, total } = usePagedLocator({
+    path: isSites ? '/api/locator/sites' : '/api/locator/stations',
+    itemsKey: isSites ? 'sites' : 'stations',
+    query: mapBbox ? { ...filterQuery, bbox: mapBbox } : filterQuery,
+    pageSize: isMap ? MAP_LIMIT : isSites ? SITE_PAGE : CHARGER_PAGE,
+    resetKey,
+  });
 
   // Site-wide alerts, price changes and payment status.
   useEffect(() => {
@@ -236,7 +277,6 @@ export function LocatorPage() {
   }
 
   const select = (id) => update({ station: id });
-  const count = view === 'sites' ? data.sites.reduce((total, site) => total + site.chargerCount, 0) : data.stations.length;
   const activeCount = activeFilterCount(filters);
   const filterControls = (
     <LocatorFilters
@@ -275,7 +315,9 @@ export function LocatorPage() {
               Find a charger
             </Typography>
             <Typography color="text.secondary">
-              {loading ? 'Looking…' : `${count} charge point${count === 1 ? '' : 's'}`}
+              {loading && !count
+                ? 'Looking…'
+                : `${count} charge point${count === 1 ? '' : 's'}${isMap ? ' in view' : ''}`}
             </Typography>
           </div>
           <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
@@ -292,26 +334,50 @@ export function LocatorPage() {
           </Stack>
         </Stack>
 
-
         {locationError && <Alert severity="warning" onClose={() => setLocationError(null)}>{locationError}</Alert>}
-        {loadError && <Alert severity="error">{loadError}</Alert>}
+        {error && <Alert severity="error">{error}</Alert>}
 
-        {view === 'list' && !loading && !count && !loadError && (
+        {!isMap && (
+          <SearchBox
+            value={filters.q}
+            onSearch={(q) => update({ q })}
+            placeholder={isSites ? 'Search sites, charge points or addresses' : 'Search by name or address'}
+          />
+        )}
+
+        {view === 'list' && !loading && !count && !error && (
           <Typography color="text.secondary">No charge points match these filters.</Typography>
         )}
-        {view === 'list' && <ChargerList stations={data.stations} selectedId={selectedId} onSelect={select} />}
+        {view === 'list' && (
+          <>
+            <ChargerList stations={items} selectedId={selectedId} onSelect={select} />
+            {items.length > 0 && (
+              <LoadMore hasMore={hasMore} loading={loadingMore} onLoadMore={loadMore} shown={items.length} total={total} noun="charge points" />
+            )}
+          </>
+        )}
 
-        {view === 'sites' && !loading && !data.sites.length && !loadError && (
+        {isSites && !loading && !count && !error && (
           <Typography color="text.secondary">No sites have charge points to show yet.</Typography>
         )}
-        {view === 'sites' && <SiteList sites={data.sites} selectedId={selectedId} onSelect={select} />}
+        {isSites && (
+          <>
+            <SiteList sites={items} selectedId={selectedId} onSelect={select} />
+            {items.length > 0 && (
+              <LoadMore hasMore={hasMore} loading={loadingMore} onLoadMore={loadMore} shown={items.length} total={total} noun="sites" />
+            )}
+          </>
+        )}
 
-        {view === 'map' && (
+        {isMap && (
           <ChargerMap
-            stations={data.stations}
+            stations={items}
+            total={count}
             selectedId={selectedId}
             onSelect={select}
             userPosition={nearMe}
+            frameKey={resetKey}
+            onViewport={onViewport}
           />
         )}
       </Stack>
@@ -338,7 +404,7 @@ export function LocatorPage() {
             Clear all
           </Button>
           <Button variant="contained" onClick={() => setFiltersOpen(false)}>
-            Show {count} charge point{count === 1 ? '' : 's'}
+            {isMap ? 'Done' : `Show ${count} charge point${count === 1 ? '' : 's'}`}
           </Button>
         </Stack>
       </Drawer>

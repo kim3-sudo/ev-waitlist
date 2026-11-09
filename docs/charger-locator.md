@@ -39,6 +39,8 @@ publishable. Its own address and pin are set under **Admin > Site location**.
 | `GET /api/locator/stations` | public | List and map points, across all sites. Filters: `q`, `standard` (plugs), `type` (`AC`, `DC`), `minChargers` (charge points at the site, at least), `amenities` and `parking` (keys, all must match), `minKw`, `available=1`, `bbox=w,s,e,n`, `lat`, `lng`, `radiusKm`, `sort=distance\|power\|name`. Lists are comma-separated; plugs and types match any one, amenities and parking must all match. Each charge point carries `chargerType` (`DC` or `AC`), `waitingCount`, `tips`, and its `zone` with `waitingCount` and `available` |
 | `GET /api/locator/stations/:id` | public | One charge point, with pricing and notices |
 | `GET /api/locator/sites` | public | Sites, grouped by zone, with the same filters |
+
+Both list endpoints return one page at a time: `offset` and `limit` (25 charge points by default, 10 sites by default, at most 500). The reply gives `count` (charge points that match), `total` (charge points, or sites for `/sites`), `hasMore` and the page's `offset` and `limit`. The list and by-site views load the next page as the driver scrolls. The map asks for the charge points in view with `bbox` and `limit=500`, and says how many are left off when there are more. `q` also matches site names on the by-site view.
 | `GET /api/t/<slug>/locator/...` | public | The same, for one site |
 | `GET`/`PUT /api/admin/locator/site` | admin, stations view/manage | The site's own address and pin |
 | `GET /api/admin/locator/geocode?q=` | admin, stations view | Address lookup |

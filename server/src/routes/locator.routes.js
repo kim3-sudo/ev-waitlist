@@ -53,10 +53,35 @@ function scopeOf(req) {
   return req.tenantId ? [req.tenantId] : null;
 }
 
+// Pages of results. The list and by-site views load a page at a time as the driver scrolls,
+// and the map asks for the points in view. Bad values fall back to the defaults.
+export const CHARGER_PAGE = 25;
+export const SITE_PAGE = 10;
+const MAX_PAGE = 500;
+export function pageFrom(query, fallback) {
+  const limit = Number(query.limit);
+  const offset = Number(query.offset);
+  return {
+    limit: Number.isInteger(limit) && limit > 0 ? Math.min(limit, MAX_PAGE) : fallback,
+    offset: Number.isInteger(offset) && offset > 0 ? offset : 0,
+  };
+}
+
+// One page of charge points. `count` is every charge point that matches, `hasMore` says whether
+// a later page exists.
 locatorRouter.get('/stations', async (req, res) => {
   const stations = await publishedLocatorStations({ tenantIds: scopeOf(req) });
   const result = filterLocatorStations(stations, optionsFrom(req.query));
-  res.json({ stations: result, count: result.length });
+  const { offset, limit } = pageFrom(req.query, CHARGER_PAGE);
+  const page = result.slice(offset, offset + limit);
+  res.json({
+    stations: page,
+    count: result.length,
+    total: result.length,
+    offset,
+    limit,
+    hasMore: offset + page.length < result.length,
+  });
 });
 
 locatorRouter.get('/stations/:id', async (req, res) => {
@@ -71,9 +96,21 @@ locatorRouter.get('/stations/:id', async (req, res) => {
   res.json(found);
 });
 
+// One page of sites. `count` is the charge points across every matching site, and `total` the
+// number of sites.
 locatorRouter.get('/sites', async (req, res) => {
   const stations = await publishedLocatorStations({ tenantIds: scopeOf(req) });
   const result = filterLocatorStations(stations, optionsFrom(req.query));
   const sites = await sitesById([...new Set(result.map((s) => s.site.id))]);
-  res.json({ sites: groupBySite(result, sites) });
+  const all = groupBySite(result, sites);
+  const { offset, limit } = pageFrom(req.query, SITE_PAGE);
+  const page = all.slice(offset, offset + limit);
+  res.json({
+    sites: page,
+    count: result.length,
+    total: all.length,
+    offset,
+    limit,
+    hasMore: offset + page.length < all.length,
+  });
 });

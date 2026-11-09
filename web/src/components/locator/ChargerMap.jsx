@@ -1,17 +1,39 @@
-import { useEffect } from 'react';
-import { MapContainer, TileLayer, CircleMarker, Tooltip, useMap } from 'react-leaflet';
+import { useEffect, useRef } from 'react';
+import { MapContainer, TileLayer, CircleMarker, Tooltip, useMap, useMapEvents } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import { Box, Stack, Typography } from '@mui/material';
 import { CHARGER_TYPE_INFO, STATE_INFO, TILE_URL, TILE_ATTRIBUTION, formatKw, standardName } from './locatorFormat.js';
 
-// Keeps the map framed around the charge points when the list of them changes.
-function FitToStations({ stations }) {
+// Frames the map around the charge points once for each set of filters (`frameKey`). Later
+// refreshes and pans leave the view where the driver put it.
+function FitToStations({ stations, frameKey }) {
   const map = useMap();
+  const framedFor = useRef(null);
   useEffect(() => {
-    if (!stations.length) return;
+    if (!stations.length || framedFor.current === frameKey) return;
+    framedFor.current = frameKey;
     const bounds = stations.map((s) => [s.latitude, s.longitude]);
     map.fitBounds(bounds, { padding: [40, 40], maxZoom: 15 });
-  }, [map, stations]);
+  }, [map, stations, frameKey]);
+  return null;
+}
+
+// Reports the area on screen after the map settles, so only the charge points there are loaded.
+function ViewportWatcher({ onViewport }) {
+  const latest = useRef(onViewport);
+  latest.current = onViewport;
+  const timer = useRef(null);
+  useMapEvents({
+    moveend(e) {
+      clearTimeout(timer.current);
+      const map = e.target;
+      timer.current = setTimeout(() => {
+        const b = map.getBounds();
+        latest.current([b.getWest(), b.getSouth(), b.getEast(), b.getNorth()].map((v) => v.toFixed(5)).join(','));
+      }, 300);
+    },
+  });
+  useEffect(() => () => clearTimeout(timer.current), []);
   return null;
 }
 
@@ -34,8 +56,11 @@ function Legend() {
 
 // Map of charge points. Colour says whether a charge point is DC rapid or Level 1/2 (AC);
 // selecting one opens its detail.
-export function ChargerMap({ stations, selectedId, onSelect, userPosition }) {
+// `stations` are the charge points in view (or all of them, before the map is framed). `total`
+// is how many match in all, so the map can say when some are left off.
+export function ChargerMap({ stations, total, selectedId, onSelect, userPosition, frameKey, onViewport }) {
   const center = stations[0] ? [stations[0].latitude, stations[0].longitude] : [51.5, -0.12];
+  const left = Math.max(0, total - stations.length);
 
   return (
     <Stack spacing={1}>
@@ -43,7 +68,8 @@ export function ChargerMap({ stations, selectedId, onSelect, userPosition }) {
       <Box sx={{ height: { xs: '60vh', md: '70vh' }, borderRadius: 1, overflow: 'hidden', border: 1, borderColor: 'divider' }}>
         <MapContainer center={center} zoom={12} style={{ height: '100%', width: '100%' }} scrollWheelZoom>
           <TileLayer url={TILE_URL} attribution={TILE_ATTRIBUTION} />
-          <FitToStations stations={stations} />
+          <FitToStations stations={stations} frameKey={frameKey} />
+          <ViewportWatcher onViewport={onViewport} />
           {stations.map((s) => {
             const type = CHARGER_TYPE_INFO[s.chargerType] ?? CHARGER_TYPE_INFO.AC;
             const state = STATE_INFO[s.state] ?? STATE_INFO.OFFLINE;
@@ -88,6 +114,11 @@ export function ChargerMap({ stations, selectedId, onSelect, userPosition }) {
           </Typography>
         )}
       </Box>
+      {left > 0 && (
+        <Typography variant="body2" color="text.secondary">
+          Showing {stations.length} of {total} charge points in view. Zoom in to see the rest.
+        </Typography>
+      )}
     </Stack>
   );
 }
