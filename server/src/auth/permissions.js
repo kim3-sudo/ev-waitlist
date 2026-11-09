@@ -25,6 +25,9 @@ export const PERMISSIONS = [
   { key: 'serviceAccounts.manage', group: 'API access', label: 'Create, change, and revoke service accounts and their API keys' },
   { key: 'audit.view', group: 'Audit', label: 'View the audit log and check its tamper-evidence chain' },
   { key: 'audit.export', group: 'Audit', label: 'Download the audit log, and see the SIEM export status' },
+  // Driver features: the account's own vehicles and details. Every admin role has it, and the
+  // driver role has only it, so a driver account cannot reach the admin pages.
+  { key: 'driver.account', group: 'Driver accounts', label: 'Use a driver account: manage own vehicles and details' },
 
   // Held by service accounts (API keys), not by people. See routes/api.v1.
   { key: 'api.stations.read', group: 'API (service accounts)', label: 'Read charge points and their status' },
@@ -48,11 +51,26 @@ export const PERMISSION_KEYS = PERMISSIONS.map((p) => p.key);
 // The keys a service account may hold. Everything else is for people only.
 export const SERVICE_ACCOUNT_PERMISSION_KEYS = PERMISSION_KEYS.filter((k) => k.startsWith('api.'));
 
+// The permission every driver account holds. An account that holds nothing else is a
+// driver account: it can use the driver pages but not the admin ones.
+export const DRIVER_PERMISSION = 'driver.account';
+export const DRIVER_ROLE = 'DRIVER';
+
+export function isDriverOnly(permissions) {
+  return permissions.includes(DRIVER_PERMISSION) && permissions.every((p) => p === DRIVER_PERMISSION);
+}
+
 // Built-in roles live in code so they can't be edited or deleted by mistake.
 export const BUILT_IN_ROLES = {
   ADMIN: {
     description: 'Full access to everything.',
     permissions: PERMISSION_KEYS,
+  },
+  // Given to accounts that sign up as drivers. Not offered when giving a person an admin role.
+  [DRIVER_ROLE]: {
+    description: 'A driver account: manages its own vehicles and details, and nothing else.',
+    permissions: [DRIVER_PERMISSION],
+    hidden: true,
   },
   VIEWER: {
     description: 'Read-only access to charge points, zones, complaints, and reports.',
@@ -73,4 +91,4 @@ export const BUILT_IN_ROLES = {
   },
 };
 
-export const BUILT_IN_ROLE_NAMES = Object.keys(BUILT_IN_ROLES);
+export const BUILT_IN_ROLE_NAMES = Object.keys(BUILT_IN_ROLES).filter((name) => !BUILT_IN_ROLES[name].hidden);

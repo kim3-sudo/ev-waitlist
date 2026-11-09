@@ -1,35 +1,69 @@
 import { useEffect, useState } from 'react';
-import { Link as RouterLink } from 'react-router-dom';
-import {
-  Alert,
-  Button,
-  Chip,
-  Divider,
-  Drawer,
-  IconButton,
-  Stack,
-  Table,
-  TableBody,
-  TableCell,
-  TableRow,
-  Typography,
-} from '@mui/material';
+import { Alert, Button, Chip, Divider, Drawer, IconButton, Stack, Table, TableBody, TableCell, TableRow, Typography } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
 import { api } from '../../api/client.js';
+import { StationNotices } from '../DriverNotices.jsx';
 import {
+  AMENITY_OPTIONS,
   CONNECTOR_STATUS_LABEL,
+  PARKING_OPTIONS,
   STATE_INFO,
   formatKw,
   formatRate,
-  sitePagePath,
+  joinTargetFor,
+  labelsFor,
   standardName,
 } from './locatorFormat.js';
 
 const REFRESH_MS = 15000;
 
+// Chips for a short list of labels, e.g. the amenities or parking a site offers.
+function Chips({ labels }) {
+  return (
+    <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: 'wrap' }}>
+      {labels.map((label) => (
+        <Chip key={label} size="small" variant="outlined" label={label} />
+      ))}
+    </Stack>
+  );
+}
+
+// The site as a driver sees it: what is nearby, the parking, and whether it is access-controlled.
+function AboutSite({ site }) {
+  const features = site.features ?? { amenities: [], parking: [], accessControlled: false };
+  const amenities = labelsFor(AMENITY_OPTIONS, features.amenities);
+  const parking = labelsFor(PARKING_OPTIONS, features.parking);
+  return (
+    <Stack spacing={1.25}>
+      <Typography variant="subtitle2">About {site.name}</Typography>
+      {features.accessControlled && (
+        <Alert severity="info">
+          This site is access-controlled. Drivers need permission to use it, such as a workplace parking lot.
+        </Alert>
+      )}
+      {amenities.length > 0 && (
+        <>
+          <Typography variant="body2" color="text.secondary">Nearby</Typography>
+          <Chips labels={amenities} />
+        </>
+      )}
+      {parking.length > 0 && (
+        <>
+          <Typography variant="body2" color="text.secondary">Parking at this site</Typography>
+          <Chips labels={parking} />
+        </>
+      )}
+      {!amenities.length && !parking.length && !features.accessControlled && (
+        <Typography variant="body2" color="text.secondary">No details have been added for this site.</Typography>
+      )}
+    </Stack>
+  );
+}
+
 // The charge point's detail: live connector status, power, price, hours and how to get there.
-// It refreshes while open, so the connector states stay current.
-export function ChargerDetailDrawer({ stationId, onClose }) {
+// It refreshes while open, so the connector states stay current. The button at the foot joins
+// the waitlist, or starts charging when nobody is waiting and a charger is free.
+export function ChargerDetailDrawer({ stationId, onClose, onJoin, lockedOut = false }) {
   const [station, setStation] = useState(null);
   const [error, setError] = useState(null);
 
@@ -53,6 +87,7 @@ export function ChargerDetailDrawer({ stationId, onClose }) {
 
   const open = Boolean(stationId);
   const state = station ? STATE_INFO[station.state] ?? STATE_INFO.OFFLINE : null;
+  const target = station ? joinTargetFor(station) : null;
   const mapsLink = station
     ? `https://www.google.com/maps/dir/?api=1&destination=${station.latitude},${station.longitude}`
     : null;
@@ -99,11 +134,7 @@ export function ChargerDetailDrawer({ stationId, onClose }) {
             </Button>
           </Stack>
 
-          {station.notices?.alerts?.map((a) => (
-            <Alert key={a.id} severity={a.severity === 'WARNING' ? 'warning' : 'info'}>
-              {a.message}
-            </Alert>
-          ))}
+          <StationNotices notices={station.notices} />
 
           <Divider />
 
@@ -130,6 +161,17 @@ export function ChargerDetailDrawer({ stationId, onClose }) {
             </TableBody>
           </Table>
 
+          {(station.parking ?? []).length > 0 && (
+            <Stack spacing={1.25}>
+              <Typography variant="subtitle2">Parking at this charge point</Typography>
+              <Chips labels={labelsFor(PARKING_OPTIONS, station.parking)} />
+            </Stack>
+          )}
+
+          <AboutSite site={station.site} />
+
+          <Divider />
+
           <Typography variant="subtitle2">Connectors</Typography>
           <Stack spacing={1}>
             {station.connectors.map((c) => (
@@ -143,12 +185,13 @@ export function ChargerDetailDrawer({ stationId, onClose }) {
             ))}
           </Stack>
 
-          <Divider />
-
-          <Button component={RouterLink} to={sitePagePath(station.site)} variant="contained">
-            {station.zone ? 'Join the zone waitlist' : 'Join the waitlist'}
+          <Button variant="contained" disabled={lockedOut} onClick={() => onJoin(target)}>
+            {target.mode === 'start' ? 'Start charging' : 'Join waitlist'}
           </Button>
           <Typography variant="caption" color="text.secondary">
+            {target.waitingCount === 0
+              ? 'No one is waiting.'
+              : `${target.waitingCount} ${target.waitingCount === 1 ? 'person is' : 'people are'} waiting${station.zone ? ' for this zone' : ''}.`}{' '}
             Live status refreshes every 15 seconds.
           </Typography>
         </Stack>

@@ -41,15 +41,20 @@ model Tenant {
 
   // Where the site is, for the charger locator (see services/locator.js). The
   // pin on the map. Stations keep their own coordinates.
-  address     String?
-  city        String?
-  postalCode  String?
-  country     String?
-  latitude    Float?
-  longitude   Float?
+  address          String?
+  city             String?
+  postalCode       String?
+  country          String?
+  latitude         Float?
+  longitude        Float?
   // Opening hours in free text (e.g. "24/7") and a comma-separated list of amenities.
-  hours       String?
-  amenities   String?
+  hours            String?
+  amenities        String?
+  // Structured amenities and parking the site offers, as JSON lists of keys (see
+  // services/siteFeatures.js). Access-controlled sites, such as a workplace lot, need permission to enter.
+  amenityKeys      String? // @longtext
+  parkingKeys      String? // @longtext
+  accessControlled Boolean @default(false)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -58,6 +63,8 @@ model Tenant {
   customRoles           CustomRole[]
   zones                 Zone[]
   stations              Station[]
+  driverVehicles        DriverVehicle[]
+  driverSignInCodes     DriverSignInCode[]
   queueEntries          QueueEntry[]
   reservations          Reservation[]
   transactions          Transaction[]
@@ -84,91 +91,101 @@ model Tenant {
 }
 
 model Admin {
-  id                 String   @id @default(cuid())
-  tenant             Tenant   @relation(fields: [tenantId], references: [id])
+  id                 String          @id @default(cuid())
+  tenant             Tenant          @relation(fields: [tenantId], references: [id])
   tenantId           String
-  email              String   @unique
+  email              String          @unique
   // The identity this account has at the SAML identity provider, when it is
   // not the email (persistent or unspecified NameID). Unique within a site.
   samlNameId         String?
   // Null for SSO-only accounts that authenticate exclusively via SAML.
   passwordHash       String?
   mfaSecret          String?
-  mfaEnabled         Boolean  @default(false)
+  mfaEnabled         Boolean         @default(false)
+  // Driver details, kept on the account. A driver account is an account with the DRIVER role
+  // (see auth/permissions.js), so admins can also be drivers with the same e-mail.
+  name               String?
+  phone              String?
+  driverVehicles     DriverVehicle[]
   // Alerts this admin chooses to receive by e-mail (see services/adminAlerts.js).
-  alertOnFault       Boolean  @default(false)
-  alertOffline       Boolean  @default(false)
+  alertOnFault       Boolean         @default(false)
+  alertOffline       Boolean         @default(false)
   // Set on the auto-generated first-run admin. Blocks all admin API access
   // until the password is changed.
-  mustChangePassword Boolean  @default(false)
+  mustChangePassword Boolean         @default(false)
   // Role name: a built-in role (ADMIN, VIEWER -- see auth/permissions.js) or
   // the name of a CustomRole in the same site. Permissions are resolved from it on each request.
-  role               String   @default("ADMIN")
+  role               String          @default("ADMIN")
   // The installation administrator (the person who set up the software). Only this
   // account can create and manage sites.
-  instanceAdmin      Boolean  @default(false)
-  createdAt          DateTime @default(now())
+  instanceAdmin      Boolean         @default(false)
+  createdAt          DateTime        @default(now())
 
-  @@index([tenantId])
   @@unique([tenantId, samlNameId])
+  @@index([tenantId])
 }
 
 // One row per site (keyed by tenant): white-label branding and
 // waitlist-identifier configuration.
 model Settings {
-  tenant             Tenant   @relation(fields: [tenantId], references: [id])
-  tenantId           String   @id
-  companyName        String   @default("Plugyard")
-  logoUrl            String? // @longtext
-  primaryColor       String   @default("#0d7a5f")
-  secondaryColor     String   @default("#1565c0")
-  fontFamily         String?
+  tenant                  Tenant   @relation(fields: [tenantId], references: [id])
+  tenantId                String   @id
+  companyName             String   @default("Plugyard")
+  logoUrl                 String? // @longtext
+  primaryColor            String   @default("#0d7a5f")
+  secondaryColor          String   @default("#1565c0")
+  fontFamily              String?
   // JSON: { sets: [built-in set ids], custom: [{ code, name }] } -- the license plate
   // regions the join form offers. Null means the default sets.
-  plateRegions       String? // @longtext
+  plateRegions            String? // @longtext
   // Code of the region the join form selects first (one of the offered regions).
-  defaultPlateRegion String?
+  defaultPlateRegion      String?
   // LICENSE_PLATE | PARKING_PERMIT | BOTH -- which identifier(s) the public
   // waitlist join form collects.
-  identifierMode     String   @default("LICENSE_PLATE")
+  identifierMode          String   @default("LICENSE_PLATE")
   // When true, admin accounts without MFA enabled are forced to enroll
   // (TOTP) the next time they log in.
-  mfaRequired        Boolean  @default(false)
+  mfaRequired             Boolean  @default(false)
   // False until the first-run setup wizard (first charge point + branding)
   // is completed or skipped.
-  setupCompleted     Boolean  @default(false)
+  setupCompleted          Boolean  @default(false)
   // JSON: { emails: [], phones: [], contactFormUrl: "" } -- the help details the
   // "Help" tab shows drivers. Set on the About page. Null means none given yet.
-  helpContacts       String? // @longtext
-  updatedAt          DateTime @updatedAt
+  helpContacts            String? // @longtext
+  // Whether a waitlist join needs contact details (an e-mail address or mobile number).
+  waitlistContactRequired Boolean  @default(true)
+  // OPTIONAL: guests can join and start charging; signed-in drivers get their details filled in.
+  // REQUIRED: a driver must sign in to join the waitlist or start charging.
+  driverAccounts          String   @default("OPTIONAL")
+  updatedAt               DateTime @updatedAt
 }
 
 // One row per site: the site's SAML service-provider configuration for a
 // single external identity provider.
 model SamlConfig {
-  tenant         Tenant   @relation(fields: [tenantId], references: [id])
-  tenantId       String   @id
-  enabled        Boolean  @default(false)
-  idpEntityId    String?
-  idpSsoUrl      String?
-  idpCertificate String? // @longtext
+  tenant            Tenant   @relation(fields: [tenantId], references: [id])
+  tenantId          String   @id
+  enabled           Boolean  @default(false)
+  idpEntityId       String?
+  idpSsoUrl         String?
+  idpCertificate    String? // @longtext
   // When true, a SAML assertion for an identity with no matching Admin
   // auto-creates an SSO-only account. When false, that login is rejected.
-  autoProvision  Boolean  @default(false)
+  autoProvision     Boolean  @default(false)
   // Which NameID format identifies a user: "emailAddress", "persistent" or
   // "unspecified". For emailAddress the NameID is the email; otherwise the
   // NameID is stored on Admin.samlNameId and the email comes from an attribute.
-  nameIdFormat   String   @default("emailAddress")
+  nameIdFormat      String   @default("emailAddress")
   // Name of the assertion attribute that lists the user's groups. Null turns
   // group-based roles off, and roles are left as they are.
-  groupAttribute String?
+  groupAttribute    String?
   // JSON array of { "group": string, "role": string }, in priority order: the
   // first entry whose group the user belongs to sets the role.
-  groupRoleMappings String @default("[]") // @longtext
+  groupRoleMappings String   @default("[]") // @longtext
   // Role for a user in none of the mapped groups. Null denies login to those
   // users. Only used when groupAttribute is set.
-  defaultRole    String?  @default("VIEWER")
-  updatedAt      DateTime @updatedAt
+  defaultRole       String?  @default("VIEWER")
+  updatedAt         DateTime @updatedAt
 }
 
 // A group of stations (e.g. "Parking Garage P1") that share a single
@@ -211,6 +228,8 @@ model Station {
   amenities         String?
   // Optional notes an admin writes for drivers (e.g. where the charger is). Shown in the waitlist's Help tab.
   tips              String? // @longtext
+  // Parking the charge point has, as a JSON list of keys (see services/siteFeatures.js).
+  parkingKeys       String? // @longtext
   // What the charge point reported when it booted (BootNotification) and since then.
   serialNumber      String?
   firmwareVersion   String?
@@ -529,7 +548,7 @@ model AuditEvent {
   outcome     String
   reason      String?
   // JSON: field-level before and after values. Secret fields are recorded as [set] or [cleared].
-  changes     String?   // @longtext
+  changes     String? // @longtext
   // Address at the logging level chosen in AuditSettings: full, truncated, or none.
   ip          String?
   userAgent   String?
@@ -858,4 +877,38 @@ model MessageTemplate {
 
   @@unique([tenantId, key])
   @@index([tenantId])
+}
+
+// A vehicle a driver has added to their account, and the plugs it can charge with (including
+// with an adapter). Used to show which charge points work for the driver.
+model DriverVehicle {
+  id           String   @id @default(cuid())
+  tenant       Tenant   @relation(fields: [tenantId], references: [id])
+  tenantId     String
+  owner        Admin    @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  ownerId      String
+  name         String
+  make         String?
+  model        String?
+  licensePlate String?
+  // JSON list of connector standards (see ocpi/mappers.js CONNECTOR_STANDARDS).
+  plugs        String // @longtext
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([ownerId])
+}
+
+// A one-time code a driver signs in with. Only a keyed hash is stored, and each code is used once.
+model DriverSignInCode {
+  id        String   @id @default(cuid())
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  tenantId  String
+  email     String
+  codeHash  String
+  attempts  Int      @default(0)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([tenantId, email])
 }

@@ -4,7 +4,8 @@ import { registry } from '../services/stationRegistry.js';
 import { joinQueue } from '../services/queueService.js';
 import { tryDispatchZone } from '../services/dispatcher.js';
 import { getSettings, resolvePlateRegion, validateIdentifiers } from '../services/settingsService.js';
-import { contactProblem, smsChoice } from '../services/notifier.js';
+import { smsChoice } from '../services/notifier.js';
+import { joinerDetails } from '../services/driverAccounts.js';
 import { roamingWarningError } from '../services/roaming.js';
 import { stationNotices } from '../services/notices.js';
 import { lockedOut, LOCKOUT_MESSAGE } from '../services/payments/providerOutage.js';
@@ -46,16 +47,14 @@ zonesRouter.get('/', async (req, res) => {
 });
 
 zonesRouter.post('/:id/waitlist', async (req, res) => {
-  const { name, contact, licensePlate, parkingPermit, plateRegion } = req.body ?? {};
+  const { licensePlate, parkingPermit, plateRegion } = req.body ?? {};
   const sms = smsChoice(req.body?.smsNumber);
   if (sms.error) return res.status(400).json({ error: sms.error });
-  const contactError = contactProblem(contact);
-  if (contactError) return res.status(400).json({ error: contactError });
-  if (!name || !contact) {
-    return res.status(400).json({ error: 'name and contact are required' });
-  }
 
   const settings = await getSettings();
+  const who = await joinerDetails(req, req.body, settings);
+  if (who.error) return res.status(who.error.status).json(who.error.body);
+  const { name, contact } = who;
   const identifierError = validateIdentifiers(settings.identifierMode, { licensePlate, parkingPermit });
   if (identifierError) {
     return res.status(400).json({ error: identifierError });

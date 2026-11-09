@@ -17,8 +17,11 @@ import {
   Tabs,
   Typography,
 } from '@mui/material';
+import { Link as RouterLink } from 'react-router-dom';
 import { api } from '../api/client.js';
+import { useAuth } from '../context/AuthContext.jsx';
 import { useSettings } from '../context/SettingsContext.jsx';
+import { sitePath } from '../sitePaths.js';
 import { groupedRegions } from '../plateRegions.js';
 import { PricingPanel } from './waitlist/PricingPanel.jsx';
 import { HelpPanel } from './waitlist/HelpPanel.jsx';
@@ -33,12 +36,30 @@ import { HelpPanel } from './waitlist/HelpPanel.jsx';
 // offered a free charger is started straight away; `started` says that worked, `error` says it
 // did not (the driver can then press Start on the status card), and `waiting` says no charger
 // was free so they were put in line.
+// What the contact field is for. Only a waitlist sends a message, so the text says so: when
+// starting charging, the contact is used only if no charger is free and the driver is put in line.
+function contactHelp({ starting, contactRequired, smsOffered }) {
+  if (starting) {
+    return contactRequired
+      ? 'Only needed if no charger is free when you start. Then we can tell you here when one is ready.'
+      : 'Optional. Only used if no charger is free when you start, so we can tell you here when one is ready.';
+  }
+  const how = smsOffered ? 'notify you' : 'e-mail you';
+  return contactRequired ? `We'll ${how} here when a charger is ready.` : `Optional. We'll ${how} here when a charger is ready.`;
+}
+
 export function WaitlistJoinDialog({ target, mode = 'join', onClose, onJoined }) {
   const { settings } = useSettings();
   const identifierMode = settings.identifierMode ?? 'LICENSE_PLATE';
   const showPlate = identifierMode === 'LICENSE_PLATE' || identifierMode === 'BOTH';
   const showPermit = identifierMode === 'PARKING_PERMIT' || identifierMode === 'BOTH';
   const starting = mode === 'start';
+  // A driver signed in on this site has their details filled in. A site may require one.
+  const { can } = useAuth();
+  const hasAccount = can('driver.account');
+  const driverRequired = settings.driverAccounts === 'REQUIRED';
+  const gated = driverRequired && !hasAccount;
+  const contactRequired = settings.waitlistContactRequired !== false;
 
   const [tab, setTab] = useState('form');
   const [pricing, setPricing] = useState(null);
@@ -57,6 +78,21 @@ export function WaitlistJoinDialog({ target, mode = 'join', onClose, onJoined })
   // Roaming: when the site has it on, the warning must be read and accepted.
   const [roaming, setRoaming] = useState(null);
   const [warningAccepted, setWarningAccepted] = useState(false);
+
+  // A signed-in driver's details fill the form. Anything they have typed is kept.
+  useEffect(() => {
+    if (!hasAccount) return;
+    api
+      .get('/api/driver/me')
+      .then(({ data }) => {
+        setName((value) => value || data.name || '');
+        setContact((value) => value || data.email || '');
+        setSmsNumber((value) => value || data.phone || '');
+        const plate = data.vehicles.find((v) => v.licensePlate)?.licensePlate;
+        if (plate) setLicensePlate((value) => value || plate);
+      })
+      .catch(() => {});
+  }, [hasAccount]);
 
   useEffect(() => {
     api
@@ -132,8 +168,28 @@ export function WaitlistJoinDialog({ target, mode = 'join', onClose, onJoined })
       </Tabs>
       <form onSubmit={handleSubmit}>
         <DialogContent>
-          {tab === 'form' && (
+          {tab === 'form' && gated && (
             <Stack spacing={2} sx={{ mt: 1 }}>
+              <Alert severity="info">
+                This site asks drivers to sign in before they join the waitlist or start charging.
+              </Alert>
+              <Button
+                component={RouterLink}
+                variant="contained"
+                to={`${sitePath('/sign-in')}?next=${encodeURIComponent(window.location.pathname + window.location.search)}`}
+              >
+                Sign in or create an account
+              </Button>
+            </Stack>
+          )}
+
+          {tab === 'form' && !gated && (
+            <Stack spacing={2} sx={{ mt: 1 }}>
+              {hasAccount && (
+                <Typography variant="body2" color="text.secondary">
+                  Signed in. Your details are filled in; you can change them here.
+                </Typography>
+              )}
               {starting && (
                 <Typography variant="body2" color="text.secondary">
                   Nobody is waiting. If a charger is free, we'll unlock it for you as soon as you submit.
@@ -152,14 +208,10 @@ export function WaitlistJoinDialog({ target, mode = 'join', onClose, onJoined })
               <TextField
                 label={smsOffered ? 'Email or phone' : 'Email'}
                 type={smsOffered ? 'text' : 'email'}
-                helperText={
-                  smsOffered
-                    ? "We'll notify you here when a charger is ready."
-                    : "We'll e-mail you here when a charger is ready."
-                }
+                helperText={contactHelp({ starting, contactRequired, smsOffered })}
                 value={contact}
                 onChange={(e) => setContact(e.target.value)}
-                required
+                required={contactRequired}
                 fullWidth
               />
               {smsOffered && (
@@ -244,7 +296,7 @@ export function WaitlistJoinDialog({ target, mode = 'join', onClose, onJoined })
         <DialogActions sx={{ px: 3, pb: 2 }}>
           <Button onClick={onClose}>Cancel</Button>
           {tab === 'form' && (
-            <Button type="submit" variant="contained" disabled={submitting || (roamingOn && !warningAccepted)}>
+            <Button type="submit" variant="contained" disabled={gated || submitting || (roamingOn && !warningAccepted)}>
               {submitting ? (starting ? 'Starting…' : 'Joining…') : actionLabel}
             </Button>
           )}

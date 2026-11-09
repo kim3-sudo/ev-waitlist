@@ -20,7 +20,8 @@ export function findCustomRole(name) {
 }
 
 export async function resolvePermissions(roleName) {
-  if (BUILT_IN_ROLE_NAMES.includes(roleName)) return BUILT_IN_ROLES[roleName].permissions;
+  // Includes hidden built-in roles (the driver role), which admins cannot assign.
+  if (Object.hasOwn(BUILT_IN_ROLES, roleName)) return BUILT_IN_ROLES[roleName].permissions;
   const custom = await findCustomRole(roleName);
   return custom ? parsePermissions(custom.permissions) : [];
 }

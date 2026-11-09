@@ -1,8 +1,8 @@
 import { useEffect } from 'react';
 import { MapContainer, TileLayer, CircleMarker, Tooltip, useMap } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
-import { Box, Typography } from '@mui/material';
-import { STATE_INFO, TILE_URL, TILE_ATTRIBUTION, formatKw, standardName } from './locatorFormat.js';
+import { Box, Stack, Typography } from '@mui/material';
+import { CHARGER_TYPE_INFO, STATE_INFO, TILE_URL, TILE_ATTRIBUTION, formatKw, standardName } from './locatorFormat.js';
 
 // Keeps the map framed around the charge points when the list of them changes.
 function FitToStations({ stations }) {
@@ -15,51 +15,79 @@ function FitToStations({ stations }) {
   return null;
 }
 
-// Map of charge points. Markers are coloured by state, and selecting one opens its detail.
+// A colour key for the two kinds of charge point on the map.
+function Legend() {
+  return (
+    <Stack direction="row" spacing={2} useFlexGap sx={{ flexWrap: 'wrap', alignItems: 'center' }}>
+      {Object.entries(CHARGER_TYPE_INFO).map(([type, info]) => (
+        <Stack key={type} direction="row" spacing={0.75} sx={{ alignItems: 'center' }}>
+          <Box sx={{ width: 12, height: 12, borderRadius: '50%', bgcolor: info.color }} />
+          <Typography variant="body2">{info.label}</Typography>
+        </Stack>
+      ))}
+      <Typography variant="body2" color="text.secondary">
+        Faded points are offline.
+      </Typography>
+    </Stack>
+  );
+}
+
+// Map of charge points. Colour says whether a charge point is DC rapid or Level 1/2 (AC);
+// selecting one opens its detail.
 export function ChargerMap({ stations, selectedId, onSelect, userPosition }) {
   const center = stations[0] ? [stations[0].latitude, stations[0].longitude] : [51.5, -0.12];
 
   return (
-    <Box sx={{ height: { xs: '60vh', md: '70vh' }, borderRadius: 1, overflow: 'hidden', border: 1, borderColor: 'divider' }}>
-      <MapContainer center={center} zoom={12} style={{ height: '100%', width: '100%' }} scrollWheelZoom>
-        <TileLayer url={TILE_URL} attribution={TILE_ATTRIBUTION} />
-        <FitToStations stations={stations} />
-        {stations.map((s) => {
-          const state = STATE_INFO[s.state] ?? STATE_INFO.OFFLINE;
-          const selected = s.id === selectedId;
-          return (
+    <Stack spacing={1}>
+      <Legend />
+      <Box sx={{ height: { xs: '60vh', md: '70vh' }, borderRadius: 1, overflow: 'hidden', border: 1, borderColor: 'divider' }}>
+        <MapContainer center={center} zoom={12} style={{ height: '100%', width: '100%' }} scrollWheelZoom>
+          <TileLayer url={TILE_URL} attribution={TILE_ATTRIBUTION} />
+          <FitToStations stations={stations} />
+          {stations.map((s) => {
+            const type = CHARGER_TYPE_INFO[s.chargerType] ?? CHARGER_TYPE_INFO.AC;
+            const state = STATE_INFO[s.state] ?? STATE_INFO.OFFLINE;
+            const selected = s.id === selectedId;
+            const offline = s.state === 'OFFLINE';
+            return (
+              <CircleMarker
+                key={s.id}
+                center={[s.latitude, s.longitude]}
+                radius={selected ? 11 : 8}
+                pathOptions={{
+                  color: selected ? '#212121' : '#ffffff',
+                  weight: 2,
+                  fillColor: type.color,
+                  fillOpacity: offline ? 0.35 : 0.95,
+                }}
+                eventHandlers={{ click: () => onSelect(s.id) }}
+              >
+                <Tooltip direction="top" offset={[0, -6]}>
+                  <Box component="span" sx={{ display: 'block' }}>
+                    <strong>{s.name}</strong> · {state.label}
+                    <br />
+                    {type.label} · {formatKw(s.maxKw)} · {s.connectors.map((c) => standardName(c.standard)).join(', ')}
+                  </Box>
+                </Tooltip>
+              </CircleMarker>
+            );
+          })}
+          {userPosition && (
             <CircleMarker
-              key={s.id}
-              center={[s.latitude, s.longitude]}
-              radius={selected ? 11 : 8}
-              pathOptions={{ color: '#ffffff', weight: 2, fillColor: state.color, fillOpacity: 0.95 }}
-              eventHandlers={{ click: () => onSelect(s.id) }}
+              center={[userPosition.lat, userPosition.lng]}
+              radius={6}
+              pathOptions={{ color: '#ffffff', weight: 2, fillColor: '#1976d2', fillOpacity: 1 }}
             >
-              <Tooltip direction="top" offset={[0, -6]}>
-                <Box component="span" sx={{ display: 'block' }}>
-                  <strong>{s.name}</strong> · {state.label}
-                  <br />
-                  {formatKw(s.maxKw)} · {s.connectors.map((c) => standardName(c.standard)).join(', ')}
-                </Box>
-              </Tooltip>
+              <Tooltip>You are here</Tooltip>
             </CircleMarker>
-          );
-        })}
-        {userPosition && (
-          <CircleMarker
-            center={[userPosition.lat, userPosition.lng]}
-            radius={6}
-            pathOptions={{ color: '#ffffff', weight: 2, fillColor: '#1976d2', fillOpacity: 1 }}
-          >
-            <Tooltip>You are here</Tooltip>
-          </CircleMarker>
+          )}
+        </MapContainer>
+        {!stations.length && (
+          <Typography variant="body2" color="text.secondary" sx={{ p: 2 }}>
+            No charge points match these filters.
+          </Typography>
         )}
-      </MapContainer>
-      {!stations.length && (
-        <Typography variant="body2" color="text.secondary" sx={{ p: 2 }}>
-          No charge points match these filters.
-        </Typography>
-      )}
-    </Box>
+      </Box>
+    </Stack>
   );
 }

@@ -1,8 +1,21 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Container, Paper, Typography, TextField, Button, Stack, Alert, MenuItem, FormLabel, RadioGroup, FormControlLabel, FormGroup, Checkbox, Radio, Box } from '@mui/material';
+import { Container, Paper, Typography, TextField, Button, Stack, Alert, MenuItem, FormLabel, RadioGroup, FormControlLabel, FormGroup, Checkbox, Radio, Box, Switch } from '@mui/material';
 import { api } from '../api/client.js';
 import { useSettings } from '../context/SettingsContext.jsx';
 import { groupedRegions } from '../plateRegions.js';
+
+const DRIVER_ACCOUNT_OPTIONS = [
+  {
+    value: 'OPTIONAL',
+    label: 'Optional',
+    help: 'Guests can still join and start charging. A driver who signs in has their details filled in.',
+  },
+  {
+    value: 'REQUIRED',
+    label: 'Required',
+    help: 'A driver must sign in to join the waitlist or start charging.',
+  },
+];
 
 const IDENTIFIER_OPTIONS = [
   { value: 'LICENSE_PLATE', label: 'License plate number only' },
@@ -41,6 +54,8 @@ export function AdminWaitlistPage() {
         identifierMode: settings.identifierMode ?? 'LICENSE_PLATE',
         plateSets: settings.plateRegionConfig?.sets ?? [],
         defaultPlateRegion: settings.defaultPlateRegion ?? '',
+        waitlistContactRequired: settings.waitlistContactRequired ?? true,
+        driverAccounts: settings.driverAccounts ?? 'OPTIONAL',
       });
       setCustomText(customToText(settings.plateRegionConfig?.custom));
     }
@@ -82,6 +97,8 @@ export function AdminWaitlistPage() {
         identifierMode: form.identifierMode,
         plateRegionConfig: { sets: form.plateSets, custom: customRegions.map((r) => ({ code: r.code, name: r.name })) },
         defaultPlateRegion: offeredCodes.has(form.defaultPlateRegion) ? form.defaultPlateRegion : '',
+        waitlistContactRequired: form.waitlistContactRequired,
+        driverAccounts: form.driverAccounts,
       });
       await refresh();
       setSuccess(true);
@@ -107,6 +124,44 @@ export function AdminWaitlistPage() {
           <Stack spacing={3}>
             {error && <Alert severity="error">{error}</Alert>}
             {success && <Alert severity="success">Waitlist settings saved.</Alert>}
+
+            <Box>
+              <Typography variant="subtitle1" fontWeight={600} gutterBottom>
+                Contact details
+              </Typography>
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={form.waitlistContactRequired}
+                    onChange={(e) => setForm((f) => ({ ...f, waitlistContactRequired: e.target.checked }))}
+                  />
+                }
+                label="Require contact details to join the waitlist"
+              />
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                When this is on, a driver gives an e-mail address or mobile number so they can be told when a charger is
+                ready. Turn it off to let drivers join without one; they will not be told when a charger is free.
+              </Typography>
+
+              <FormLabel>Driver accounts</FormLabel>
+              <RadioGroup value={form.driverAccounts} onChange={update('driverAccounts')}>
+                {DRIVER_ACCOUNT_OPTIONS.map((opt) => (
+                  <FormControlLabel
+                    key={opt.value}
+                    value={opt.value}
+                    control={<Radio />}
+                    label={
+                      <Box>
+                        <Typography variant="body2">{opt.label}</Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          {opt.help}
+                        </Typography>
+                      </Box>
+                    }
+                  />
+                ))}
+              </RadioGroup>
+            </Box>
 
             <Box>
               <Typography variant="subtitle1" fontWeight={600} gutterBottom>

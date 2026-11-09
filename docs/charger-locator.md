@@ -1,11 +1,16 @@
 # Charger locator
 
 The charger locator shows drivers where their charge points are: as a list, grouped by
-site (and zone), or as points on an OpenStreetMap map. Drivers can filter by plug type,
-minimum power, availability and text, sort by distance, and open a charge point to see
-live connector status, price, opening hours and directions.
+site (and zone), or as points on an OpenStreetMap map. The map is the default view. DC rapid
+charge points and Level 1/2 (AC) charge points have different colours on the map. Drivers can
+filter by one or more plug types (a charge point matches when it has any of them), minimum
+power, availability and text, sort by distance, and open a charge point to see live connector
+status, price, opening hours and directions.
 
-It is public, at `/locator` for the default site and `/t/<slug>/locator` for a named site.
+The locator is the home page: `/` for the default site and `/t/<slug>` for a named site. It is
+also where drivers join a waitlist or start charging. The detail panel's button reads "Start
+charging" when nobody is waiting and a charger is free, and "Join waitlist" otherwise. The old
+`/locator` and `/t/<slug>/locator` addresses still open the same page.
 
 ## What a charge point needs to appear
 
@@ -31,7 +36,7 @@ publishable. Its own address and pin are set under **Admin > Site location**.
 
 | Route | Who | Purpose |
 |---|---|---|
-| `GET /api/locator/stations` | public | List and map points, across all sites. Filters: `q`, `standard`, `minKw`, `available=1`, `bbox=w,s,e,n`, `lat`, `lng`, `radiusKm`, `sort=distance\|power\|name` |
+| `GET /api/locator/stations` | public | List and map points, across all sites. Filters: `q`, `standard` (plugs), `type` (`AC`, `DC`), `minChargers` (charge points at the site, at least), `amenities` and `parking` (keys, all must match), `minKw`, `available=1`, `bbox=w,s,e,n`, `lat`, `lng`, `radiusKm`, `sort=distance\|power\|name`. Lists are comma-separated; plugs and types match any one, amenities and parking must all match. Each charge point carries `chargerType` (`DC` or `AC`), `waitingCount`, `tips`, and its `zone` with `waitingCount` and `available` |
 | `GET /api/locator/stations/:id` | public | One charge point, with pricing and notices |
 | `GET /api/locator/sites` | public | Sites, grouped by zone, with the same filters |
 | `GET /api/t/<slug>/locator/...` | public | The same, for one site |
@@ -57,3 +62,14 @@ or self-host tiles and point `VITE_TILE_URL` at it. The map always shows the
 `npm run db:seed-simulator` gives the simulator station a position (London by default,
 or `SIM_LATITUDE` and `SIM_LONGITUDE`) and complete connector details, so it appears on
 the map. Running it again only fills in blanks.
+
+## Site details and parking
+
+Each site has an admin-ticked list of amenities nearby (dining, restrooms, shopping, lodging,
+public parks, grocery, Wi-Fi, camping, free charging), a list of parking options (accessible,
+covered by a canopy, in a garage, illuminated, pull-through for trailers, trailer-friendly), and
+an access-controlled flag for sites that need permission to enter, such as a workplace lot. The
+admin sets these on the Site location page. A charge point has its own parking list, set on its
+form. A driver sees the site's details in the charge point panel. Parking matches a filter when
+the charge point or its site offers it. The keys are in `server/src/services/siteFeatures.js`,
+and the web app keeps the same keys in `web/src/components/locator/locatorFormat.js`.

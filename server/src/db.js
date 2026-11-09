@@ -34,6 +34,8 @@ const TENANT_SCOPED_MODELS = new Set([
   'messageTemplate',
   'meterSample',
   'stationEvent',
+  'driverVehicle',
+  'driverSignInCode',
 ]);
 
 // Operations that take a `where` (other than the finds, which are matched by prefix).

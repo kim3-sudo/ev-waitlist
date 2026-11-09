@@ -46,6 +46,7 @@ import { adminAuditRouter } from './routes/admin.audit.routes.js';
 import { auditHttp } from './audit/httpAudit.js';
 import { adminServiceAccountsRouter } from './routes/admin.serviceAccounts.routes.js';
 import { apiV1Router } from './routes/api.v1/index.js';
+import { driverRouter } from './routes/driver.routes.js';
 import { API_DOCS_DIR } from './apiDocs.js';
 
 // Builds the REST API's Express app. Deliberately has no side effects
@@ -76,6 +77,8 @@ export function createApp() {
   app.use('/api/notices', noticesRouter);
   app.use('/api/pricing', pricingRouter);
   app.use('/api/waitlist', waitlistRouter);
+  // Driver accounts: sign-in, the account's details and vehicles.
+  app.use('/api/driver', driverRouter);
   // The public REST API. Its routes authenticate with API keys, not admin sessions.
   app.use('/api/v1', apiV1Router);
   // The Redocly reference for the API (built by npm run docs:api:build).
@@ -101,6 +104,7 @@ export function createApp() {
   sitePublicRouter.use('/notices', noticesRouter);
   sitePublicRouter.use('/pricing', pricingRouter);
   sitePublicRouter.use('/waitlist', waitlistRouter);
+  sitePublicRouter.use('/driver', driverRouter);
   sitePublicRouter.use('/settings', settingsRouter);
   sitePublicRouter.use('/pay', payRouter);
   app.use('/api/t/:slug', tenantFromSlug, sitePublicRouter);

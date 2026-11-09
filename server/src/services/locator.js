@@ -4,6 +4,7 @@ import { registry } from './stationRegistry.js';
 import { stationNotices } from './notices.js';
 import { getPaymentSettings } from './payments/paymentSettingsService.js';
 import { stationIsPublishable, ocppToOcpiStatus } from '../ocpi/mappers.js';
+import { readParkingKeys, siteFeaturesView } from './siteFeatures.js';
 
 // Backs the charger locator: the public map, list and by-site views. Only stations
 // that are publishable (coordinates and complete connectors) are ever returned, the
@@ -110,8 +111,15 @@ export function stateOf(station, connectors) {
   return 'UNAVAILABLE';
 }
 
+// DC rapid charging if any connector is DC; otherwise Level 1/2 (AC).
+export function chargerTypeOf(connectors) {
+  return connectors.some((c) => c.powerType === 'DC') ? 'DC' : 'AC';
+}
+
 // The public form of one published station. `notices` comes from stationNotices.
-export function serializeLocatorStation(station, { tenant, notices, pricing }) {
+// `zoneAvailable` says whether any charge point in the station's zone is free now.
+// The waiting counts let the drawer say "Start charging" or "Join waitlist".
+export function serializeLocatorStation(station, { tenant, notices, pricing, zoneAvailable = false }) {
   const connectors = connectorsOf(station);
   const details = locatorDetails(station, tenant);
   const kws = connectors.map((c) => c.kw).filter((kw) => kw != null);
@@ -121,15 +129,32 @@ export function serializeLocatorStation(station, { tenant, notices, pricing }) {
     ...details,
     latitude: station.latitude,
     longitude: station.longitude,
-    site: { id: tenant.id, slug: tenant.slug, name: tenant.name },
-    zone: station.zone ? { id: station.zone.id, name: station.zone.name } : null,
+    site: { id: tenant.id, slug: tenant.slug, name: tenant.name, features: siteFeaturesView(tenant) },
+    zone: station.zone
+      ? {
+          id: station.zone.id,
+          name: station.zone.name,
+          waitingCount: station.zone._count?.queueEntries ?? 0,
+          available: zoneAvailable,
+        }
+      : null,
     state: stateOf(station, connectors),
     available: isAvailable(station, connectors),
+    chargerType: chargerTypeOf(connectors),
+    // Parking at this charge point. The site's own parking is in site.features.
+    parking: readParkingKeys(station.parkingKeys),
     maxKw: kws.length ? Math.max(...kws) : null,
     connectors,
+    waitingCount: station.queueEntries?.length ?? 0,
+    tips: station.tips ?? null,
     pricing: pricing ?? null,
     notices: notices ?? { alerts: [], pricing: [] },
   };
+}
+
+// A charge point can be free now: connected, with a connector available.
+function availableNow(station) {
+  return isAvailable(station, connectorsOf(station));
 }
 
 // The site's pricing as a driver sees it. Null for a free site.
@@ -151,15 +176,19 @@ export function pricingSummary(settings) {
 // The stations to show, across the given sites (or all sites when tenantIds is null).
 // Each is returned with its site, zone and connectors, already serialized.
 export async function publishedLocatorStations({ tenantIds = null } = {}) {
+  const waiting = { where: { status: 'WAITING' }, select: { id: true } };
   const stations = await rawPrisma.station.findMany({
-    where: {
-      ...(tenantIds && { tenantId: { in: tenantIds } }),
-      latitude: { not: null },
-      longitude: { not: null },
+    where: tenantIds ? { tenantId: { in: tenantIds } } : {},
+    include: {
+      connectors: true,
+      tenant: true,
+      queueEntries: waiting,
+      zone: { include: { _count: { select: { queueEntries: { where: { status: 'WAITING' } } } } } },
     },
-    include: { connectors: true, zone: true, tenant: true },
     orderBy: { name: 'asc' },
   });
+  // A zone is free when any of its charge points is, including ones not shown on the map.
+  const zoneFree = new Set(stations.filter((s) => s.zoneId && availableNow(s)).map((s) => s.zoneId));
   const publishable = stations.filter(stationIsPublishable);
 
   // Notices and pricing depend on the site, so each site's stations are read in its context.
@@ -177,7 +206,14 @@ export async function publishedLocatorStations({ tenantIds = null } = {}) {
       pricing: pricingSummary(await getPaymentSettings()),
     }));
     for (const station of list) {
-      out.push(serializeLocatorStation(station, { tenant, notices: notices.get(station.id), pricing }));
+      out.push(
+        serializeLocatorStation(station, {
+          tenant,
+          notices: notices.get(station.id),
+          pricing,
+          zoneAvailable: zoneFree.has(station.zoneId),
+        }),
+      );
     }
   }
   return out;
@@ -186,10 +222,27 @@ export async function publishedLocatorStations({ tenantIds = null } = {}) {
 // Filters and sorts a list of serialized stations (see publishedLocatorStations).
 // Recognised query: { bbox: 'west,south,east,north', near: {lat,lng,radiusKm},
 // q, standard, minKw, availableOnly, sort: 'distance'|'power'|'name' }.
+// `standard` may be one plug or a list. A charge point matches when it has any of them.
+// chargerTypes ('AC'|'DC', any of them), minChargers (the site has at least this many charge
+// points), amenities and parking (the site or charge point has all of them).
 export function filterLocatorStations(stations, options = {}) {
-  const { bbox, near, q, standard, minKw, availableOnly, sort } = options;
+  const { bbox, near, q, standard, minKw, availableOnly, sort, chargerTypes, minChargers, amenities, parking } = options;
   const needle = q?.trim().toLowerCase();
+  const plugs = [standard].flat().filter(Boolean);
+  const types = chargerTypes ?? [];
+  const wantedAmenities = amenities ?? [];
+  const wantedParking = parking ?? [];
+  // How many charge points each site has in this list, before the filters narrow it.
+  const siteCounts = new Map();
+  for (const s of stations) siteCounts.set(s.site.id, (siteCounts.get(s.site.id) ?? 0) + 1);
   let result = stations.filter((s) => {
+    if (types.length && !types.includes(s.chargerType)) return false;
+    if (minChargers != null && siteCounts.get(s.site.id) < minChargers) return false;
+    if (wantedAmenities.length && !wantedAmenities.every((a) => s.site.features.amenities.includes(a))) return false;
+    if (wantedParking.length) {
+      const offered = [...s.parking, ...s.site.features.parking];
+      if (!wantedParking.every((p) => offered.includes(p))) return false;
+    }
     if (bbox) {
       const [w, so, e, n] = bbox;
       if (s.longitude < w || s.longitude > e || s.latitude < so || s.latitude > n) return false;
@@ -198,7 +251,7 @@ export function filterLocatorStations(stations, options = {}) {
       const haystack = [s.name, s.address, s.city, s.postalCode, s.site.name].filter(Boolean).join(' ').toLowerCase();
       if (!haystack.includes(needle)) return false;
     }
-    if (standard && !s.connectors.some((c) => c.standard === standard)) return false;
+    if (plugs.length && !s.connectors.some((c) => plugs.includes(c.standard))) return false;
     if (minKw != null && !(s.maxKw != null && s.maxKw >= minKw)) return false;
     if (availableOnly && !s.available) return false;
     if (near) {
@@ -249,6 +302,7 @@ export function groupBySite(stations, sites) {
         isDefault: site.id === DEFAULT_TENANT_ID,
         chargerCount: list.length,
         availableCount: list.filter((s) => s.available).length,
+        features: siteFeaturesView(site),
         maxKw: kws.length ? Math.max(...kws) : null,
         zones: [...zones.values()].sort((a, b) => a.name.localeCompare(b.name)),
       };

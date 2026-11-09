@@ -4,7 +4,7 @@ import { rawPrisma } from '../db.js';
 import { resolvePermissions } from '../services/roleService.js';
 import { enterTenant } from '../tenancy/context.js';
 import { ensureSiteLoaded } from '../services/runtimeConfig.js';
-import { PERMISSION_KEYS } from './permissions.js';
+import { DRIVER_PERMISSION, PERMISSION_KEYS, isDriverOnly } from './permissions.js';
 
 // Verifies the Bearer session token and loads the admin it belongs to, along
 // with the permissions of their role. Accounts that must still change their
@@ -13,7 +13,9 @@ import { PERMISSION_KEYS } from './permissions.js';
 //
 // The admin's row decides which site the request works in. A token that names
 // a different site than the row is refused.
-async function verifySession(req, res, next, { allowPasswordChange }) {
+// `driverRoute` marks the driver pages, the only ones a driver-only account may use. Every
+// admin route refuses such an account, so a driver never reaches admin data.
+async function verifySession(req, res, next, { allowPasswordChange, driverRoute = false }) {
   const header = req.headers.authorization ?? '';
   const [scheme, token] = header.split(' ');
 
@@ -70,6 +72,9 @@ async function verifySession(req, res, next, { allowPasswordChange }) {
   enterTenant(siteId, async () => {
     try {
       const permissions = actingInOtherSite ? PERMISSION_KEYS : await resolvePermissions(admin.role);
+      if (!driverRoute && isDriverOnly(permissions)) {
+        return res.status(403).json({ error: 'This is a driver account. Use the driver pages.', code: 'DRIVER_ACCOUNT' });
+      }
       req.admin = {
         ...payload,
         role: admin.role,
@@ -120,6 +125,22 @@ export function requireReadOrManage(view, manage) {
     }
     next();
   };
+}
+
+// A signed-in driver (any account that holds the driver permission, admins included).
+export function requireDriver(req, res, next) {
+  return verifySession(
+    req,
+    res,
+    (err) => {
+      if (err) return next(err);
+      if (!req.admin.permissions.includes(DRIVER_PERMISSION)) {
+        return res.status(403).json({ error: 'This account cannot use driver features' });
+      }
+      next();
+    },
+    { allowPasswordChange: false, driverRoute: true },
+  );
 }
 
 // Only for the endpoints needed to finish a forced password change.

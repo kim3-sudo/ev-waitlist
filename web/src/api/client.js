@@ -11,7 +11,7 @@ export function setPublicSite(slug) {
   publicSite = slug || null;
 }
 
-const PUBLIC_PATHS = ['/api/stations', '/api/zones', '/api/notices', '/api/waitlist', '/api/pay', '/api/settings', '/api/locator', '/api/pricing'];
+const PUBLIC_PATHS = ['/api/stations', '/api/zones', '/api/notices', '/api/waitlist', '/api/pay', '/api/settings', '/api/locator', '/api/pricing', '/api/driver'];
 
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem('adminToken');

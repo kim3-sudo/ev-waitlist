@@ -5,7 +5,7 @@ import { app } from './support/testApp.js';
 import { resetDb } from './support/db.js';
 import { createAdmin } from './support/factories.js';
 import { prisma, rawPrisma } from '../src/db.js';
-import { runWithTenant } from '../src/tenancy/context.js';
+import { runWithTenant, DEFAULT_TENANT_ID } from '../src/tenancy/context.js';
 import { connectorKw, haversineKm } from '../src/services/locator.js';
 
 const SITE_B = 'site-b';
@@ -220,5 +220,54 @@ describe('admin location tools', () => {
     const token = await login((await rawPrisma.admin.findFirst()).email);
     const res = await request(app).get('/api/admin/locator/geocode?q=ab').set(bearer(token));
     assert.equal(res.status, 400);
+  });
+});
+
+describe('locator: charger type, waiting people, zones and several plugs', () => {
+  const DC_CONNECTOR = { ...GOOD_CONNECTOR, standard: 'IEC_62196_T1_COMBO', powerType: 'DC', maxVoltage: 400, maxAmperage: 125 };
+
+  it('marks a charge point with a DC connector as DC, and the rest as AC', async () => {
+    await makeStation({ identity: 'AC1', name: 'Wall box' });
+    await makeStation({ identity: 'DC1', name: 'Rapid', connectors: [DC_CONNECTOR] });
+
+    const res = await request(app).get('/api/locator/stations');
+    const byName = Object.fromEntries(res.body.stations.map((s) => [s.name, s]));
+    assert.equal(byName['Rapid'].chargerType, 'DC');
+    assert.equal(byName['Wall box'].chargerType, 'AC');
+  });
+
+  it('a list of plugs matches a charge point with any one of them', async () => {
+    await makeStation({ identity: 'T2', name: 'Type 2 only' });
+    await makeStation({ identity: 'CCS', name: 'CCS2 only', connectors: [{ ...DC_CONNECTOR, standard: 'IEC_62196_T2_COMBO' }] });
+    await makeStation({ identity: 'NACS', name: 'NACS only', connectors: [{ ...DC_CONNECTOR, standard: 'TESLA_S' }] });
+
+    const res = await request(app).get('/api/locator/stations?standard=TESLA_S,IEC_62196_T2_COMBO');
+    assert.deepEqual(res.body.stations.map((s) => s.name), ['CCS2 only', 'NACS only']);
+  });
+
+  it('reports the waiting people for a charge point, and for its zone', async () => {
+    const zone = await prisma.zone.create({ data: { name: 'Garage', tenantId: DEFAULT_TENANT_ID } });
+    await makeStation({ identity: 'Z1', name: 'Bay 1', zoneId: zone.id });
+    await makeStation({ identity: 'Z2', name: 'Bay 2', zoneId: zone.id });
+    const solo = await makeStation({ identity: 'SOLO', name: 'Solo' });
+    await prisma.queueEntry.create({
+      data: { stationId: solo.id, tenantId: DEFAULT_TENANT_ID, name: 'Ben', contact: 'ben@example.test', idTag: 'TAG-S-1', position: 1, status: 'WAITING' },
+    });
+    await prisma.queueEntry.create({
+      data: { zoneId: zone.id, tenantId: DEFAULT_TENANT_ID, name: 'Ana', contact: 'ana@example.test', idTag: 'TAG-Z-1', position: 1, status: 'WAITING' },
+    });
+
+    const res = await request(app).get('/api/locator/stations');
+    const byName = Object.fromEntries(res.body.stations.map((s) => [s.name, s]));
+    assert.equal(byName['Bay 1'].zone.waitingCount, 1);
+    assert.equal(byName['Bay 2'].zone.name, 'Garage');
+    assert.equal(byName['Solo'].zone, null);
+    assert.equal(byName['Solo'].waitingCount, 1);
+  });
+
+  it('carries the tips for a charge point', async () => {
+    await makeStation({ identity: 'TIP', name: 'Level 2', tips: 'Behind the ticket booth.' });
+    const res = await request(app).get('/api/locator/stations');
+    assert.equal(res.body.stations[0].tips, 'Behind the ticket booth.');
   });
 });

@@ -4,7 +4,6 @@ import { Box } from '@mui/material';
 import { NavBar } from './components/NavBar.jsx';
 import { ProtectedRoute, PermissionRoute } from './components/ProtectedRoute.jsx';
 import { AdminLayout } from './components/AdminLayout.jsx';
-import { PublicWaitlistPage } from './pages/PublicWaitlistPage.jsx';
 import { LoginPage } from './pages/LoginPage.jsx';
 import { SsoCallbackPage } from './pages/SsoCallbackPage.jsx';
 import { AccountPage } from './pages/AccountPage.jsx';
@@ -41,8 +40,11 @@ import { AdminSitesPage } from './pages/AdminSitesPage.jsx';
 import { AdminPrivacyPage } from './pages/AdminPrivacyPage.jsx';
 import { AdminRoamingPage } from './pages/AdminRoamingPage.jsx';
 import { AdminLocationPage } from './pages/AdminLocationPage.jsx';
+import { DriverSignInPage } from './pages/DriverSignInPage.jsx';
+import { DriverAccountPage } from './pages/DriverAccountPage.jsx';
+import { sitePath } from './sitePaths.js';
 
-// The locator loads its map library, so it is split out and loaded only when opened.
+// The locator is the home page. It loads its map library, so it is split out of the main bundle.
 const LocatorPage = lazy(() => import('./pages/LocatorPage.jsx').then((m) => ({ default: m.LocatorPage })));
 
 export default function App() {
@@ -51,7 +53,7 @@ export default function App() {
       <NavBar />
       <Suspense fallback={null}>
       <Routes>
-        <Route path="/" element={<PublicWaitlistPage />} />
+        <Route path="/" element={<LocatorPage />} />
         <Route path="/locator" element={<LocatorPage />} />
         <Route
           path="/t/:slug/locator"
@@ -62,6 +64,33 @@ export default function App() {
           }
         />
         <Route path="/login" element={<LoginPage />} />
+        <Route path="/sign-in" element={<DriverSignInPage />} />
+        <Route
+          path="/t/:slug/sign-in"
+          element={
+            <SiteScope>
+              <DriverSignInPage />
+            </SiteScope>
+          }
+        />
+        <Route
+          path="/driver"
+          element={
+            <ProtectedRoute signInPath={sitePath('/sign-in')}>
+              <DriverAccountPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/t/:slug/driver"
+          element={
+            <SiteScope>
+              <ProtectedRoute signInPath={sitePath('/sign-in')}>
+                <DriverAccountPage />
+              </ProtectedRoute>
+            </SiteScope>
+          }
+        />
         <Route path="/sso/callback" element={<SsoCallbackPage />} />
         <Route path="/pay/hold/:token" element={<PayHoldPage />} />
         <Route path="/pay/:token" element={<PayPage />} />
@@ -69,7 +98,7 @@ export default function App() {
           path="/t/:slug"
           element={
             <SiteScope>
-              <PublicWaitlistPage />
+              <LocatorPage />
             </SiteScope>
           }
         />

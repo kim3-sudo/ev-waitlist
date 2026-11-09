@@ -75,6 +75,8 @@ export function AuthProvider({ children }) {
       role,
       permissions,
       can: (permission) => permissions.includes(permission),
+      // True when the account holds any permission beyond the driver one, so it can use the admin pages.
+      hasAdminAccess: permissions.some((p) => p !== 'driver.account'),
       isInstanceAdmin: instanceAdmin,
       mustChangePassword,
       isAuthenticated: Boolean(token),

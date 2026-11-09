@@ -18,11 +18,36 @@ import ArrowDropDownIcon from '@mui/icons-material/ArrowDropDown';
 import MenuIcon from '@mui/icons-material/Menu';
 import PersonIcon from '@mui/icons-material/Person';
 import LogoutIcon from '@mui/icons-material/Logout';
+import DirectionsCarIcon from '@mui/icons-material/DirectionsCar';
 import { Link as RouterLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useSettings } from '../context/SettingsContext.jsx';
+import { sitePath } from '../sitePaths.js';
 
-function ProfileMenu({ email, onLogout }) {
+// The account links. An admin gets their profile, and their vehicles when they can use the driver
+// features. A driver-only account gets its account page.
+function AccountMenuItems({ hasAdminAccess, canDrive, onPick }) {
+  return [
+    hasAdminAccess && (
+      <MenuItem key="profile" component={RouterLink} to="/account" onClick={onPick}>
+        <ListItemIcon>
+          <PersonIcon fontSize="small" />
+        </ListItemIcon>
+        My profile
+      </MenuItem>
+    ),
+    canDrive && (
+      <MenuItem key="driver" component={RouterLink} to={sitePath('/driver')} onClick={onPick}>
+        <ListItemIcon>
+          <DirectionsCarIcon fontSize="small" />
+        </ListItemIcon>
+        {hasAdminAccess ? 'My vehicles' : 'My account'}
+      </MenuItem>
+    ),
+  ];
+}
+
+function ProfileMenu({ email, onLogout, hasAdminAccess, canDrive }) {
   const [anchorEl, setAnchorEl] = useState(null);
   const close = () => setAnchorEl(null);
 
@@ -50,12 +75,7 @@ function ProfileMenu({ email, onLogout }) {
           {email}
         </MenuItem>
         <Divider />
-        <MenuItem component={RouterLink} to="/account" onClick={close}>
-          <ListItemIcon>
-            <PersonIcon fontSize="small" />
-          </ListItemIcon>
-          My profile
-        </MenuItem>
+        <AccountMenuItems hasAdminAccess={hasAdminAccess} canDrive={canDrive} onPick={close} />
         <MenuItem
           onClick={() => {
             close();
@@ -73,7 +93,7 @@ function ProfileMenu({ email, onLogout }) {
 }
 
 // On narrow screens the links collapse into one menu behind a menu button.
-function CollapsedNavMenu({ email, isAuthenticated, onLogout }) {
+function CollapsedNavMenu({ email, isAuthenticated, hasAdminAccess, canDrive, onLogout }) {
   const [anchorEl, setAnchorEl] = useState(null);
   const close = () => setAnchorEl(null);
 
@@ -100,32 +120,26 @@ function CollapsedNavMenu({ email, isAuthenticated, onLogout }) {
         slotProps={{ paper: { sx: { minWidth: 220 } } }}
       >
         <MenuItem component={RouterLink} to="/" onClick={close}>
-          Waitlist
-        </MenuItem>
-        <MenuItem component={RouterLink} to="/locator" onClick={close}>
           Find a charger
         </MenuItem>
+        {isAuthenticated && hasAdminAccess && [
+          <MenuItem key="reports" component={RouterLink} to="/reports" onClick={close}>
+            Reports
+          </MenuItem>,
+          <MenuItem key="help" component={RouterLink} to="/help" onClick={close}>
+            Help
+          </MenuItem>,
+          <MenuItem key="admin" component={RouterLink} to="/admin" onClick={close}>
+            Admin
+          </MenuItem>,
+        ]}
         {isAuthenticated ? (
           [
-            <MenuItem key="reports" component={RouterLink} to="/reports" onClick={close}>
-              Reports
-            </MenuItem>,
-            <MenuItem key="help" component={RouterLink} to="/help" onClick={close}>
-              Help
-            </MenuItem>,
-            <MenuItem key="admin" component={RouterLink} to="/admin" onClick={close}>
-              Admin
-            </MenuItem>,
             <Divider key="divider" />,
             <MenuItem key="email" disabled sx={{ opacity: '1 !important', fontSize: 13 }}>
               {email}
             </MenuItem>,
-            <MenuItem key="profile" component={RouterLink} to="/account" onClick={close}>
-              <ListItemIcon>
-                <PersonIcon fontSize="small" />
-              </ListItemIcon>
-              My profile
-            </MenuItem>,
+            <AccountMenuItems key="account" hasAdminAccess={hasAdminAccess} canDrive={canDrive} onPick={close} />,
             <MenuItem
               key="logout"
               onClick={() => {
@@ -140,9 +154,14 @@ function CollapsedNavMenu({ email, isAuthenticated, onLogout }) {
             </MenuItem>,
           ]
         ) : (
-          <MenuItem component={RouterLink} to="/login" onClick={close}>
-            Admin login
-          </MenuItem>
+          [
+            <MenuItem key="sign-in" component={RouterLink} to={sitePath('/sign-in')} onClick={close}>
+              Sign in
+            </MenuItem>,
+            <MenuItem key="admin-login" component={RouterLink} to="/login" onClick={close}>
+              Admin login
+            </MenuItem>,
+          ]
         )}
       </Menu>
     </>
@@ -150,7 +169,9 @@ function CollapsedNavMenu({ email, isAuthenticated, onLogout }) {
 }
 
 export function NavBar() {
-  const { isAuthenticated, email, logout } = useAuth();
+  const { isAuthenticated, email, logout, hasAdminAccess, can } = useAuth();
+  // Anyone with a driver account can keep their vehicles and details.
+  const canDrive = can('driver.account');
   const { settings } = useSettings();
   const navigate = useNavigate();
   const collapsed = useMediaQuery((theme) => theme.breakpoints.down('md'));
@@ -178,16 +199,19 @@ export function NavBar() {
           {settings.companyName}
         </Typography>
         {collapsed ? (
-          <CollapsedNavMenu email={email} isAuthenticated={isAuthenticated} onLogout={handleLogout} />
+          <CollapsedNavMenu
+            email={email}
+            isAuthenticated={isAuthenticated}
+            hasAdminAccess={hasAdminAccess}
+            canDrive={canDrive}
+            onLogout={handleLogout}
+          />
         ) : (
           <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexShrink: 0 }}>
             <Button component={RouterLink} to="/" color="inherit">
-              Waitlist
-            </Button>
-            <Button component={RouterLink} to="/locator" color="inherit">
               Find a charger
             </Button>
-            {isAuthenticated ? (
+            {isAuthenticated && hasAdminAccess && (
               <>
                 <Button component={RouterLink} to="/reports" color="inherit">
                   Reports
@@ -198,12 +222,19 @@ export function NavBar() {
                 <Button component={RouterLink} to="/admin" color="inherit">
                   Admin
                 </Button>
-                <ProfileMenu email={email} onLogout={handleLogout} />
               </>
+            )}
+            {isAuthenticated ? (
+              <ProfileMenu email={email} onLogout={handleLogout} hasAdminAccess={hasAdminAccess} canDrive={canDrive} />
             ) : (
-              <Button component={RouterLink} to="/login" color="inherit" variant="outlined">
-                Admin login
-              </Button>
+              <>
+                <Button component={RouterLink} to={sitePath('/sign-in')} color="inherit">
+                  Sign in
+                </Button>
+                <Button component={RouterLink} to="/login" color="inherit" variant="outlined">
+                  Admin login
+                </Button>
+              </>
             )}
           </Stack>
         )}

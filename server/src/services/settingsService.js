@@ -1,6 +1,7 @@
 import { prisma } from '../db.js';
 import { currentTenantId } from '../tenancy/context.js';
 import { normalizeHelpContacts, parseHelpContacts } from './helpContacts.js';
+import { DRIVER_ACCOUNT_MODES } from './driverAccounts.js';
 import {
   effectivePlateRegions,
   isOfferedRegion,
@@ -53,10 +54,18 @@ export async function updateSettings(data) {
     plateRegionConfig,
     defaultPlateRegion,
     helpContacts,
+    waitlistContactRequired,
+    driverAccounts,
   } = data;
 
   if (identifierMode && !IDENTIFIER_MODES.includes(identifierMode)) {
     throw new Error(`identifierMode must be one of ${IDENTIFIER_MODES.join(', ')}`);
+  }
+  if (waitlistContactRequired !== undefined && typeof waitlistContactRequired !== 'boolean') {
+    throw new Error('waitlistContactRequired must be true or false');
+  }
+  if (driverAccounts !== undefined && !DRIVER_ACCOUNT_MODES.includes(driverAccounts)) {
+    throw new Error(`driverAccounts must be one of ${DRIVER_ACCOUNT_MODES.join(', ')}`);
   }
   if (fontFamily && !FONT_FAMILY_PATTERN.test(fontFamily)) {
     throw new Error('Choose a font family name (letters, digits and spaces only)');
@@ -109,6 +118,8 @@ export async function updateSettings(data) {
     plateRegions,
     defaultPlateRegion: defaultRegion,
     helpContacts: helpJson,
+    waitlistContactRequired,
+    driverAccounts,
   };
   return prisma.settings.upsert({
     where: { tenantId },

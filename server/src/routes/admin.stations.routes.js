@@ -6,6 +6,7 @@ import { enqueueForActivePartners } from '../ocpi/outbox.js';
 import { CONNECTOR_STANDARDS, CONNECTOR_FORMATS, POWER_TYPES, powerTypeAllowed } from '../ocpi/mappers.js';
 import { latestReadings } from '../services/meterService.js';
 import { cleanText, coordinatesProblem, locatorTextFields } from '../services/locator.js';
+import { normalizeParkingKeys, readParkingKeys } from '../services/siteFeatures.js';
 
 export const adminStationsRouter = Router();
 
@@ -28,6 +29,7 @@ function serialize(station) {
     hours: station.hours,
     amenities: station.amenities,
     tips: station.tips ?? null,
+    parkingKeys: readParkingKeys(station.parkingKeys),
     zoneId: station.zoneId,
     zoneName: station.zone?.name ?? null,
     online: registry.isConnected(station.identity),
@@ -394,6 +396,8 @@ adminStationsRouter.post('/', async (req, res) => {
   if (textFields.error) return res.status(400).json({ error: textFields.error });
   const tips = cleanText(req.body?.tips, 'Tips', TIPS_MAX);
   if (tips.error) return res.status(400).json({ error: tips.error });
+  const parking = normalizeParkingKeys(req.body?.parkingKeys);
+  if (parking.error) return res.status(400).json({ error: parking.error });
   const newCount = Math.max(0, Number(connectorCount) || 1);
   const detailsProblem = connectorDetailsError(connectors, new Set(Array.from({ length: newCount }, (_, i) => i + 1)));
   if (detailsProblem) return res.status(400).json({ error: detailsProblem });
@@ -423,6 +427,7 @@ adminStationsRouter.post('/', async (req, res) => {
       longitude: longitude ?? null,
       ...textFields.fields,
       tips: tips.value,
+      parkingKeys: parking.value ?? null,
     },
   });
 
@@ -445,6 +450,8 @@ adminStationsRouter.put('/:id', async (req, res) => {
   if (textFields.error) return res.status(400).json({ error: textFields.error });
   const tips = cleanText(req.body?.tips, 'Tips', TIPS_MAX);
   if (tips.error) return res.status(400).json({ error: tips.error });
+  const parking = normalizeParkingKeys(req.body?.parkingKeys);
+  if (parking.error) return res.status(400).json({ error: parking.error });
 
   const station = await prisma.station.findUnique({ where: { id: req.params.id } });
   if (!station) return res.status(404).json({ error: 'Station not found' });
@@ -482,6 +489,8 @@ adminStationsRouter.put('/:id', async (req, res) => {
       ...textFields.fields,
       // Left alone when the request does not send tips at all.
       tips: tips.value,
+      // Likewise for parking: only changed when the list is sent.
+      ...(parking.value !== undefined && { parkingKeys: parking.value }),
     },
   });
 

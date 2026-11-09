@@ -7,6 +7,7 @@ import { prisma } from '../db.js';
 import { config } from '../config.js';
 import { getSettings } from '../services/settingsService.js';
 import { resolvePermissions } from '../services/roleService.js';
+import { isDriverAccount } from '../services/driverAccounts.js';
 import { requireAdmin, requireAdminAllowingPasswordChange } from './auth.middleware.js';
 import { tenantForAdminEmail, tenantFromAdminToken } from '../tenancy/middleware.js';
 import { recordAudit } from '../audit/record.js';
@@ -101,6 +102,10 @@ authRouter.post('/login', tenantForAdminEmail, async (req, res) => {
   if (!admin || !admin.passwordHash || !(await bcrypt.compare(password, admin.passwordHash))) {
     auditSignIn(req, res, { admin: null, email, outcome: 'FAILED', reason: 'wrong e-mail or password' });
     return res.status(401).json({ error: 'Invalid credentials' });
+  }
+  // Driver accounts sign in on the driver sign-in page. Only admins get the two-factor step here.
+  if (await isDriverAccount(admin)) {
+    return res.status(403).json({ error: 'This is a driver account. Sign in on the driver sign-in page.' });
   }
 
   if (admin.mfaEnabled) {

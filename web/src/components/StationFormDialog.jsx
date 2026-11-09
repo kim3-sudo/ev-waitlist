@@ -15,6 +15,8 @@ import {
 import { api } from '../api/client.js';
 import { ConnectorFields } from './ConnectorFields.jsx';
 import { LocationPicker } from './locator/LocationPicker.jsx';
+import { FeatureCheckboxes } from './locator/FeatureCheckboxes.jsx';
+import { PARKING_OPTIONS } from './locator/locatorFormat.js';
 import { ConnectionTest } from './ConnectionTest.jsx';
 
 const emptyForm = {
@@ -31,6 +33,7 @@ const emptyForm = {
   hours: '',
   amenities: '',
   tips: '',
+  parkingKeys: [],
   connectorCount: 1,
   zoneId: '',
 };
@@ -53,6 +56,7 @@ export function StationFormDialog({ station, onClose, onSaved }) {
           hours: station.hours ?? '',
           amenities: station.amenities ?? '',
           tips: station.tips ?? '',
+          parkingKeys: station.parkingKeys ?? [],
           connectorCount: station.connectors.length || 1,
           zoneId: station.zoneId ?? '',
         }
@@ -201,6 +205,13 @@ export function StationFormDialog({ station, onClose, onSaved }) {
               multiline
               minRows={2}
               fullWidth
+            />
+            <FeatureCheckboxes
+              legend="Parking at this charge point"
+              helperText="A site's parking also applies to its charge points."
+              options={PARKING_OPTIONS}
+              value={form.parkingKeys}
+              onChange={(list) => setForm((f) => ({ ...f, parkingKeys: list }))}
             />
             <TextField
               select

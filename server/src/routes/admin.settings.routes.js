@@ -15,6 +15,8 @@ adminSettingsRouter.put('/', async (req, res) => {
     plateRegionConfig,
     defaultPlateRegion,
     helpContacts,
+    waitlistContactRequired,
+    driverAccounts,
   } = req.body ?? {};
 
   try {
@@ -28,6 +30,8 @@ adminSettingsRouter.put('/', async (req, res) => {
       mfaRequired,
       plateRegionConfig,
       defaultPlateRegion,
+      waitlistContactRequired,
+      driverAccounts,
       helpContacts,
     });
     res.json(settingsView(settings));

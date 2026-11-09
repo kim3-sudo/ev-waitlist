@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
-import { Alert, Button, Container, Stack, TextField, Typography } from '@mui/material';
+import { Alert, Button, Container, FormControlLabel, Stack, Switch, TextField, Typography } from '@mui/material';
 import { api } from '../api/client.js';
 import { LocationPicker } from '../components/locator/LocationPicker.jsx';
+import { FeatureCheckboxes } from '../components/locator/FeatureCheckboxes.jsx';
+import { AMENITY_OPTIONS, PARKING_OPTIONS } from '../components/locator/locatorFormat.js';
 
 const EMPTY = {
   address: '',
@@ -12,6 +14,9 @@ const EMPTY = {
   longitude: '',
   hours: '',
   amenities: '',
+  amenityKeys: [],
+  parkingKeys: [],
+  accessControlled: false,
 };
 
 // The site's own address and pin, shown on the charger locator. Charge points that
@@ -37,6 +42,9 @@ export function AdminLocationPage() {
           longitude: site.longitude ?? '',
           hours: site.hours ?? '',
           amenities: site.amenities ?? '',
+          amenityKeys: site.amenityKeys ?? [],
+          parkingKeys: site.parkingKeys ?? [],
+          accessControlled: Boolean(site.accessControlled),
         });
       })
       .catch(() => setError('The site details could not be loaded.'))
@@ -109,6 +117,43 @@ export function AdminLocationPage() {
             onChange={update('amenities')}
             fullWidth
           />
+
+          <FeatureCheckboxes
+            legend="Amenities nearby"
+            options={AMENITY_OPTIONS}
+            value={form.amenityKeys}
+            onChange={(list) => {
+              setSaved(false);
+              setForm((f) => ({ ...f, amenityKeys: list }));
+            }}
+          />
+
+          <FeatureCheckboxes
+            legend="Parking at this site"
+            helperText="Charge points at this site also show these."
+            options={PARKING_OPTIONS}
+            value={form.parkingKeys}
+            onChange={(list) => {
+              setSaved(false);
+              setForm((f) => ({ ...f, parkingKeys: list }));
+            }}
+          />
+
+          <FormControlLabel
+            control={
+              <Switch
+                checked={form.accessControlled}
+                onChange={(e) => {
+                  setSaved(false);
+                  setForm((f) => ({ ...f, accessControlled: e.target.checked }));
+                }}
+              />
+            }
+            label="Access-controlled site"
+          />
+          <Typography variant="body2" color="text.secondary" sx={{ mt: -2 }}>
+            Turn this on for a site that drivers need permission to use, such as a workplace parking lot.
+          </Typography>
 
           <div>
             <Button type="submit" variant="contained" disabled={saving}>

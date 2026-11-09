@@ -3,6 +3,7 @@ import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import { prisma } from '../db.js';
 import { resolvePermissions, roleExists, missingPermissions } from '../services/roleService.js';
+import { DRIVER_ROLE } from '../auth/permissions.js';
 
 export const adminUsersRouter = Router();
 
@@ -42,8 +43,9 @@ async function canActOn(callerPermissions, targetRole) {
 adminUsersRouter.get('/', async (req, res) => {
   const page = readPageRequest(req.query);
   if (page.error) return res.status(400).json({ error: page.error });
+  // Driver accounts are the drivers' own; they are not listed with the people who run the site.
   const rows = await prisma.admin.findMany({
-    where: afterPosition(page.position, 'createdAt', { direction: 'asc', date: true }),
+    where: { ...afterPosition(page.position, 'createdAt', { direction: 'asc', date: true }), role: { not: DRIVER_ROLE } },
     orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
     take: page.limit + 1,
   });
