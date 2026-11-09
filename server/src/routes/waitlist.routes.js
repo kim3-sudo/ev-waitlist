@@ -2,6 +2,8 @@ import { Router } from 'express';
 import { getQueueStatus } from '../services/queueService.js';
 import { cancelQueueEntry, requestStartCharging, reportLineCutter } from '../services/dispatcher.js';
 import { tenantForQueueEntry } from '../tenancy/middleware.js';
+import { prisma } from '../db.js';
+import { openLiveStream } from '../services/liveUpdates.js';
 
 export const waitlistRouter = Router();
 
@@ -32,6 +34,19 @@ function serializeEntry({ entry, position }) {
     createdAt: entry.createdAt,
   };
 }
+
+// Change notices for one entry: its own changes, and the charge point and reservation changes
+// that move it along. The driver's page refetches its entry when one arrives.
+const QUEUE_CONTEXT_MODELS = new Set(['station', 'connector', 'reservation']);
+waitlistRouter.get('/:id/live', tenantForQueueEntry, async (req, res) => {
+  const { id } = req.params;
+  const entry = await prisma.queueEntry.findUnique({ where: { id }, select: { id: true } });
+  if (!entry) return res.status(404).json({ error: 'Waitlist entry not found' });
+  openLiveStream(req, res, {
+    tenantId: req.tenantId ?? null,
+    match: (n) => (n.model === 'queueEntry' ? n.ids === null || n.ids.includes(id) : QUEUE_CONTEXT_MODELS.has(n.model)),
+  });
+});
 
 waitlistRouter.get('/:id', tenantForQueueEntry, async (req, res) => {
   const result = await getQueueStatus(req.params.id);

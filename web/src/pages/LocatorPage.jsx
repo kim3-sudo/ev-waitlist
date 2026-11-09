@@ -19,6 +19,7 @@ import CloseIcon from '@mui/icons-material/Close';
 import FilterListIcon from '@mui/icons-material/FilterList';
 import SearchIcon from '@mui/icons-material/Search';
 import { api } from '../api/client.js';
+import { subscribeLive } from '../api/live.js';
 import { LocatorFilters, activeFilterCount } from '../components/locator/LocatorFilters.jsx';
 import { ChargerList } from '../components/locator/ChargerList.jsx';
 import { SiteList } from '../components/locator/SiteList.jsx';
@@ -35,7 +36,8 @@ import { SiteNotices } from '../components/DriverNotices.jsx';
 // A driver joins a waitlist or starts charging from a charge point's detail. Filters and the
 // chosen view live in the address, so a link reopens the same search.
 const VIEWS = ['map', 'list', 'sites'];
-const POLL_MS = 15000;
+// Changes that alter the notices a driver sees (see the notices service).
+const NOTICE_MODELS = new Set(['alert', 'priceRule', 'zone', 'station']);
 const MY_ENTRIES_KEY = 'myWaitlistEntries';
 // How many charge points or sites each page of the list shows, and the most the map draws.
 const CHARGER_PAGE = 25;
@@ -246,7 +248,7 @@ export function LocatorPage() {
     resetKey,
   });
 
-  // Site-wide alerts, price changes and payment status.
+  // Site-wide alerts, price changes and payment status. Reloaded when any of them changes.
   useEffect(() => {
     let cancelled = false;
     const load = () =>
@@ -255,10 +257,12 @@ export function LocatorPage() {
         .then((res) => !cancelled && setNotices(res.data))
         .catch(() => {});
     load();
-    const timer = setInterval(load, POLL_MS);
+    const unsubscribe = subscribeLive('/api/locator/live', (notice) => {
+      if (!notice || NOTICE_MODELS.has(notice.model)) load();
+    });
     return () => {
       cancelled = true;
-      clearInterval(timer);
+      unsubscribe();
     };
   }, []);
 

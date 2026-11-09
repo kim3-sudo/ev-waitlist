@@ -1,15 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../../api/client.js';
+import { useLive } from '../../api/live.js';
 
-const POLL_MS = 15000;
+// The charge point models that change availability and price shown on the locator.
+const LOCATOR_LIVE_MODELS = ['station', 'connector', 'reservation', 'queueEntry'];
 
 const EMPTY = { items: [], scope: null, count: 0, total: 0, hasMore: false, loading: true, error: null };
 
 // Loads one page of charge points or sites from the locator, and more pages on request.
 // `query` holds the filters. `resetKey` names what the results are for (the view and the
 // filters): when it changes, the list starts again from the top and no earlier items show.
-// Replies for an earlier query are dropped. The first page refreshes on a timer, and keeps as
-// many items as are already on screen.
+// Replies for an earlier query are dropped. The first page refreshes when the server announces
+// a change, and keeps as many items as are already on screen.
 export function usePagedLocator({ path, itemsKey, query, pageSize, resetKey }) {
   const queryKey = JSON.stringify(query);
   const scope = `${path}|${resetKey}`;
@@ -56,11 +58,8 @@ export function usePagedLocator({ path, itemsKey, query, pageSize, resetKey }) {
     fetchPage(0, pageSize, false);
   }, [fetchPage, pageSize]);
 
-  // Availability changes while a driver waits, so the loaded items refresh on a timer.
-  useEffect(() => {
-    const timer = setInterval(() => fetchPage(0, Math.max(pageSize, loaded.current), false), POLL_MS);
-    return () => clearInterval(timer);
-  }, [fetchPage, pageSize]);
+  // Availability changes while a driver waits, so the loaded items refresh when it does.
+  useLive('/api/locator/live', LOCATOR_LIVE_MODELS, () => fetchPage(0, Math.max(pageSize, loaded.current), false));
 
   const loadMore = useCallback(() => {
     if (busy.current || !stateRef.current.hasMore) return;

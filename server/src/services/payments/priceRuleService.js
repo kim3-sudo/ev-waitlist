@@ -3,6 +3,7 @@ import { afterPosition, pageOf } from '../../pagination.js';
 // The rules themselves are worked out in priceRules.js.
 import { rawPrisma, prisma } from '../../db.js';
 import { currentTenantId, ownOrNetworkWhere } from '../../tenancy/context.js';
+import { publishChange } from '../liveUpdates.js';
 import { activeNowWhere, canEditRow, parseWhen, scheduleStatus } from '../notices.js';
 import { complimentaryOutagesDuring } from './providerOutage.js';
 import {
@@ -131,6 +132,7 @@ export async function createPriceRule(input, { adminId, instanceAdmin }) {
     data: { ...normalized.data, createdByAdminId: adminId },
     include: RULE_INCLUDE,
   });
+  publishChange('priceRule', rule.id);
   return { rule: serializeRule(rule, { tenantId: currentTenantId(), instanceAdmin, now: new Date() }) };
 }
 
@@ -150,6 +152,7 @@ export async function updatePriceRule(id, input, { instanceAdmin }) {
   const normalized = await normalizeRule(input, found.row, { instanceAdmin });
   if (normalized.error) return normalized;
   const rule = await rawPrisma.priceRule.update({ where: { id }, data: normalized.data, include: RULE_INCLUDE });
+  publishChange('priceRule', id);
   return { rule: serializeRule(rule, { tenantId: currentTenantId(), instanceAdmin, now: new Date() }) };
 }
 
@@ -157,6 +160,7 @@ export async function deletePriceRule(id, { instanceAdmin }) {
   const found = await findEditable(id, { instanceAdmin });
   if (found.error) return found;
   await rawPrisma.priceRule.delete({ where: { id } });
+  publishChange('priceRule', id);
   return {};
 }
 

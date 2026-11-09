@@ -3,6 +3,7 @@ import { useParams, useSearchParams } from 'react-router-dom';
 import { Alert, Button, Container, Paper, Stack, Typography, CircularProgress } from '@mui/material';
 import dropin from 'braintree-web-drop-in';
 import { api } from '../api/client.js';
+import { subscribeLive } from '../api/live.js';
 
 // Public page for paying a charging session. Card details are never typed into
 // our own form: Stripe and Square take the card on their hosted pages, and
@@ -11,6 +12,9 @@ import { api } from '../api/client.js';
 function money(cents, currency) {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(cents / 100);
 }
+
+// How long the pay page waits for the payment to be confirmed after Stripe sends the driver back.
+const CONFIRM_WAIT_MS = 20_000;
 
 export function PayPage() {
   const { token } = useParams();
@@ -39,20 +43,25 @@ export function PayPage() {
     load();
   }, [token]);
 
-  // After Stripe sends the driver back, the webhook may not have arrived yet. Poll briefly.
+  // After Stripe sends the driver back, the webhook may not have arrived yet. Wait for the
+  // server to announce the payment, and stop waiting after a while.
   useEffect(() => {
     if (!confirming) return undefined;
-    let tries = 0;
-    const timer = setInterval(async () => {
-      tries += 1;
+    const checkPaid = async () => {
       const latest = await load();
-      if ((latest && latest.status !== 'PENDING') || tries >= 10) {
-        clearInterval(timer);
-        setConfirming(false);
-      }
-    }, 2000);
-    return () => clearInterval(timer);
-  }, [confirming]);
+      if (latest && latest.status !== 'PENDING') setConfirming(false);
+    };
+    const unsubscribe = subscribeLive(`/api/pay/${token}/live`, (notice) => {
+      if (!notice || notice.model === 'charge') checkPaid();
+    });
+    // The payment may have landed before the stream opened.
+    checkPaid();
+    const giveUp = setTimeout(() => setConfirming(false), CONFIRM_WAIT_MS);
+    return () => {
+      unsubscribe();
+      clearTimeout(giveUp);
+    };
+  }, [confirming, token]);
 
   // Braintree: mount the Drop-in card form once we have a client token.
   useEffect(() => {

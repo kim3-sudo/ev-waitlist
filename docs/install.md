@@ -68,7 +68,7 @@ Set the public address in **Admin > System** (for example `https://ev.example.co
 - the callback addresses that payment providers and single sign-on use;
 - the Square webhook address.
 
-Put the server behind a reverse proxy that terminates TLS. Make sure the proxy forwards WebSocket upgrades on `/ocpp/` for charge points.
+Put the server behind a reverse proxy that terminates TLS. Make sure the proxy forwards WebSocket upgrades on `/ocpp/` for charge points. Pages get live updates over streamed responses (paths ending in `/live`), so the proxy must not buffer them. In nginx, `proxy_buffering off;` on those locations, or on the API as a whole, does this; the server also sends `X-Accel-Buffering: no`.
 
 ## Settings in `.env`
 

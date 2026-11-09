@@ -2,8 +2,7 @@ import { useEffect, useState } from 'react';
 import { Container, Paper, Stack, TextField, Typography } from '@mui/material';
 import { api } from '../api/client.js';
 import { IdleReportTable } from '../components/IdleReportTable.jsx';
-
-const POLL_MS = 8000;
+import { useLive } from '../api/live.js';
 
 export function IdleReportPage() {
   const [idle, setIdle] = useState(null);
@@ -16,9 +15,10 @@ export function IdleReportPage() {
 
   useEffect(() => {
     refresh();
-    const id = setInterval(refresh, POLL_MS);
-    return () => clearInterval(id);
   }, [minMinutes]);
+
+  // Refreshes when a charge point's idle time or a session changes.
+  useLive('/api/admin/live', ['idleEvent', 'transaction', 'station'], () => refresh());
 
   return (
     <Container maxWidth="lg" sx={{ py: 4 }}>

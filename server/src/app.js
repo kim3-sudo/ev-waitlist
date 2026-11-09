@@ -48,6 +48,8 @@ import { adminServiceAccountsRouter } from './routes/admin.serviceAccounts.route
 import { apiV1Router } from './routes/api.v1/index.js';
 import { driverRouter } from './routes/driver.routes.js';
 import { API_DOCS_DIR } from './apiDocs.js';
+import { openLiveStream } from './services/liveUpdates.js';
+import { currentTenantId } from './tenancy/context.js';
 
 // Builds the REST API's Express app. Deliberately has no side effects
 // (no listen(), no OCPP central system, no background timers) so it can be
@@ -91,6 +93,8 @@ export function createApp() {
   app.use('/api/admin/zones', requireAdmin, requireReadOrManage('zones.view', 'zones.manage'), adminZonesRouter);
   // The site's own pin and address, and address lookup for the pin picker.
   app.use('/api/admin/locator', requireAdmin, requireReadOrManage('stations.view', 'stations.manage'), adminLocatorRouter);
+  // Change notices for the admin app, pushed as they happen (see services/liveUpdates.js).
+  app.get('/api/admin/live', requireAdmin, (req, res) => openLiveStream(req, res, { tenantId: currentTenantId() }));
   app.use('/api/settings', settingsRouter);
   app.use('/api/pay', payRouter);
 

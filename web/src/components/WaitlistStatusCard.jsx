@@ -16,8 +16,10 @@ import {
   TextField,
 } from '@mui/material';
 import { api } from '../api/client.js';
+import { subscribeLive } from '../api/live.js';
 
-const POLL_MS = 5000;
+// Changes that move a waiting driver along: their entry, and the charge points and reservation.
+const WAITLIST_MODELS = new Set(['queueEntry', 'reservation', 'station', 'connector']);
 
 const STATUS_COPY = {
   WAITING: { label: 'Waiting', color: 'default' },
@@ -58,7 +60,7 @@ export function WaitlistStatusCard({ entryId, onLeave, initial }) {
   useEffect(() => {
     let cancelled = false;
 
-    async function poll() {
+    async function load() {
       try {
         const { data: entry } = await api.get(`/api/waitlist/${entryId}`);
         if (!cancelled) setData(entry);
@@ -67,11 +69,13 @@ export function WaitlistStatusCard({ entryId, onLeave, initial }) {
       }
     }
 
-    poll();
-    const id = setInterval(poll, POLL_MS);
+    load();
+    const unsubscribe = subscribeLive(`/api/waitlist/${entryId}/live`, (notice) => {
+      if (!notice || WAITLIST_MODELS.has(notice.model)) load();
+    });
     return () => {
       cancelled = true;
-      clearInterval(id);
+      unsubscribe();
     };
   }, [entryId]);
 

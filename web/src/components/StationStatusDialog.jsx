@@ -20,10 +20,9 @@ import {
   Typography,
 } from '@mui/material';
 import { api } from '../api/client.js';
+import { useLive } from '../api/live.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import { ocppStatusLabel } from '../ocppStatus.js';
-
-const POLL_MS = 5000;
 
 const METER_TEXT = {
   REPORTING: 'Reports meter readings',
@@ -86,9 +85,10 @@ export function StationStatusDialog({ stationId, onClose }) {
   useEffect(() => {
     load();
     loadConfig(false);
-    const id = setInterval(load, POLL_MS);
-    return () => clearInterval(id);
   }, [stationId]);
+
+  // Connection, connectors and recent events update as the charge point reports them.
+  useLive('/api/admin/live', ['station', 'connector', 'stationEvent', 'transaction'], () => load());
 
   // Runs one command. Commands the charge point must confirm first (ending a session)
   // ask the admin, then run again with the confirmation.

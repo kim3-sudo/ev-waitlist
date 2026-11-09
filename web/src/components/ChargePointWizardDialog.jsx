@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   Alert,
   Button,
@@ -17,6 +17,7 @@ import {
   FormControlLabel,
 } from '@mui/material';
 import { api } from '../api/client.js';
+import { useLive } from '../api/live.js';
 import { ConnectorFields } from './ConnectorFields.jsx';
 import { ConnectionTest } from './ConnectionTest.jsx';
 import { CONNECTOR_FORMAT_OPTIONS, CONNECTOR_STANDARD_OPTIONS, POWER_TYPE_OPTIONS, optionFor } from '../connectorOptions.js';
@@ -24,7 +25,6 @@ import { CONNECTOR_FORMAT_OPTIONS, CONNECTOR_STANDARD_OPTIONS, POWER_TYPE_OPTION
 const STEPS = ['Identity', 'Location', 'Connectors', 'Review', 'Connect'];
 const REVIEW_STEP = 3;
 const CONNECT_STEP = 4;
-const POLL_MS = 3000;
 
 // The URL a charge point must connect to. Derived from the API address so it
 // matches whatever host/port the server is reachable on.
@@ -126,19 +126,27 @@ export function ChargePointWizard({
       .catch(() => setZones([]));
   }, []);
 
-  // After creation, poll the station until the charger connects.
+  // After creation, wait for the charger to connect. The server announces the connection,
+  // and the station is checked then. It is also checked once when the wait starts, in case
+  // the charger connected before the announcement could arrive.
+  const waitingForConnect = step === CONNECT_STEP && Boolean(created) && !online;
+  const checkConnected = useCallback(async () => {
+    if (!created) return;
+    try {
+      const { data } = await api.get(`/api/admin/stations/${created.id}`);
+      if (data.online) setOnline(true);
+    } catch {
+      // A transient error shouldn't end the wait; the next announcement checks again.
+    }
+  }, [created]);
+
   useEffect(() => {
-    if (step !== CONNECT_STEP || !created || online) return undefined;
-    const id = setInterval(async () => {
-      try {
-        const { data } = await api.get(`/api/admin/stations/${created.id}`);
-        if (data.online) setOnline(true);
-      } catch {
-        // Keep polling; a transient error shouldn't end the wait.
-      }
-    }, POLL_MS);
-    return () => clearInterval(id);
-  }, [step, created, online]);
+    if (waitingForConnect) checkConnected();
+  }, [waitingForConnect, checkConnected]);
+
+  useLive('/api/admin/live', ['station'], () => {
+    if (waitingForConnect) checkConnected();
+  }, { enabled: waitingForConnect });
 
   function update(field) {
     return (e) => setForm((f) => ({ ...f, [field]: e.target.value }));

@@ -9,6 +9,7 @@ import { afterPosition, pageOf } from '../pagination.js';
 // rule: started, and not yet ended.
 import { rawPrisma, prisma } from '../db.js';
 import { currentTenantId, ownOrNetworkWhere } from '../tenancy/context.js';
+import { publishChange } from './liveUpdates.js';
 import { appliesTo, powerClassOf } from './payments/priceRules.js';
 
 export const ALERT_SCOPES = ['NETWORK', 'SITE', 'LOCATION', 'STATION'];
@@ -165,6 +166,7 @@ export async function createAlert(input, { adminId, instanceAdmin }) {
     data: { ...normalized.data, createdByAdminId: adminId },
     include: ALERT_INCLUDE,
   });
+  publishChange('alert', alert.id);
   return { alert: serializeAlert(alert, { tenantId: currentTenantId(), instanceAdmin, now: new Date() }) };
 }
 
@@ -185,6 +187,7 @@ export async function updateAlert(id, input, { instanceAdmin }) {
   const normalized = await normalizeAlert(input, found.row, { instanceAdmin });
   if (normalized.error) return normalized;
   const alert = await rawPrisma.alert.update({ where: { id }, data: normalized.data, include: ALERT_INCLUDE });
+  publishChange('alert', id);
   return { alert: serializeAlert(alert, { tenantId: currentTenantId(), instanceAdmin, now: new Date() }) };
 }
 
@@ -192,6 +195,7 @@ export async function deleteAlert(id, { instanceAdmin }) {
   const found = await findEditable(id, { instanceAdmin });
   if (found.error) return found;
   await rawPrisma.alert.delete({ where: { id } });
+  publishChange('alert', id);
   return {};
 }
 

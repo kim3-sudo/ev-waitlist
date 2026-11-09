@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { rawPrisma } from '../db.js';
+import { openLiveStream } from '../services/liveUpdates.js';
 import { AMENITY_KEY_LIST, PARKING_KEY_LIST } from '../services/siteFeatures.js';
 import {
   filterLocatorStations,
@@ -81,6 +82,17 @@ locatorRouter.get('/stations', async (req, res) => {
     offset,
     limit,
     hasMore: offset + page.length < result.length,
+  });
+});
+
+// Models that change what the locator shows: charge point and connector state, the queue and
+// reservations, driver notices and price changes. Notices name rows, not data, so the page
+// refetches its list when one arrives. Across all sites, or only the one the URL names.
+const LOCATOR_MODELS = new Set(['station', 'connector', 'reservation', 'queueEntry', 'alert', 'priceRule', 'zone']);
+locatorRouter.get('/live', (req, res) => {
+  const scope = scopeOf(req);
+  openLiveStream(req, res, {
+    match: (n) => LOCATOR_MODELS.has(n.model) && (!scope || scope.includes(n.tenantId)),
   });
 });
 

@@ -5,9 +5,9 @@ import { useAuth } from '../context/AuthContext.jsx';
 import { ComplaintsSummaryTable } from '../components/ComplaintsSummaryTable.jsx';
 import { LineCuttingComplaintsTable } from '../components/LineCuttingComplaintsTable.jsx';
 import { usePagedList } from '../api/paged.js';
+import { useLive } from '../api/live.js';
 import { LoadMore } from '../components/LoadMore.jsx';
 
-const POLL_MS = 8000;
 const WINDOWS = [
   { days: 7, label: 'Last 7 days' },
   { days: 30, label: 'Last 30 days' },
@@ -32,9 +32,10 @@ export function ComplaintsSummaryPage() {
 
   useEffect(() => {
     refresh();
-    const id = setInterval(refresh, POLL_MS);
-    return () => clearInterval(id);
   }, [days, canView]);
+
+  // Refreshes when a complaint or a charge point changes.
+  useLive('/api/admin/live', ['lineCuttingComplaint', 'station'], () => refresh());
 
   async function handleUpdateStatus(id, status) {
     await api.patch(`/api/admin/complaints/${id}`, { status });

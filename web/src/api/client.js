@@ -13,18 +13,31 @@ export function setPublicSite(slug) {
 
 const PUBLIC_PATHS = ['/api/stations', '/api/zones', '/api/notices', '/api/waitlist', '/api/pay', '/api/settings', '/api/locator', '/api/pricing', '/api/driver'];
 
-api.interceptors.request.use((config) => {
+// The address a request to `url` really goes to: public paths move under the site's prefix.
+export function resolveApiPath(url) {
+  if (publicSite && PUBLIC_PATHS.some((p) => url === p || url?.startsWith(`${p}/`))) {
+    return url.replace('/api/', `/api/t/${publicSite}/`);
+  }
+  return url;
+}
+
+// The headers an admin request carries. Empty when nobody is signed in.
+export function adminHeaders() {
+  const headers = {};
   const token = localStorage.getItem('adminToken');
   if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
+    headers.Authorization = `Bearer ${token}`;
     // The installation administrator can work on another site. The server ignores
     // this header for everyone else.
     const adminSite = localStorage.getItem('adminSite');
-    if (adminSite) config.headers['X-Site'] = adminSite;
+    if (adminSite) headers['X-Site'] = adminSite;
   }
-  if (publicSite && PUBLIC_PATHS.some((p) => config.url === p || config.url?.startsWith(`${p}/`))) {
-    config.url = config.url.replace('/api/', `/api/t/${publicSite}/`);
-  }
+  return headers;
+}
+
+api.interceptors.request.use((config) => {
+  Object.assign(config.headers, adminHeaders());
+  config.url = resolveApiPath(config.url);
   return config;
 });
 

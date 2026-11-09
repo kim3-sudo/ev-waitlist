@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, Box, Stack, ToggleButton, ToggleButtonGroup, Typography } from '@mui/material';
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircle';
 import BoltIcon from '@mui/icons-material/Bolt';
@@ -7,6 +7,7 @@ import BuildOutlinedIcon from '@mui/icons-material/BuildOutlined';
 import CloudOffIcon from '@mui/icons-material/CloudOff';
 import EventSeatIcon from '@mui/icons-material/EventSeat';
 import { api } from '../../api/client.js';
+import { useLive } from '../../api/live.js';
 import {
   Donut,
   DailyColumns,
@@ -19,7 +20,6 @@ import {
   useChartColors,
 } from './charts.jsx';
 
-const REFRESH_MS = 30_000;
 const RANGES = [
   { value: 1, label: '24 hours' },
   { value: 7, label: '7 days' },
@@ -222,26 +222,27 @@ export function DashboardView() {
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
 
-  useEffect(() => {
-    let cancelled = false;
-    async function load() {
-      try {
-        const { data: body } = await api.get('/api/admin/dashboard', { params: { days } });
-        if (!cancelled) {
-          setData(body);
-          setError(null);
-        }
-      } catch {
-        if (!cancelled) setError('The dashboard could not be loaded. It will try again shortly.');
+  // Only the newest request may change the page, so a slow reply for an old range is dropped.
+  const requestSeq = useRef(0);
+  const load = useCallback(async () => {
+    const seq = ++requestSeq.current;
+    try {
+      const { data: body } = await api.get('/api/admin/dashboard', { params: { days } });
+      if (seq === requestSeq.current) {
+        setData(body);
+        setError(null);
       }
+    } catch {
+      if (seq === requestSeq.current) setError('The dashboard could not be loaded. Try again in a moment.');
     }
-    load();
-    const timer = setInterval(load, REFRESH_MS);
-    return () => {
-      cancelled = true;
-      clearInterval(timer);
-    };
   }, [days]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  // Refreshes when a charge point, session, charge or queue entry changes.
+  useLive('/api/admin/live', ['station', 'connector', 'transaction', 'charge', 'queueEntry', 'reservation', 'stationEvent'], () => load());
 
   return (
     <Stack spacing={2}>
@@ -251,7 +252,7 @@ export function DashboardView() {
             Dashboard
           </Typography>
           <Typography variant="caption" color="text.secondary">
-            {data ? `Updated ${new Date(data.generatedAt).toLocaleTimeString()} · refreshes every 30 seconds` : 'Loading…'}
+            {data ? `Updated ${new Date(data.generatedAt).toLocaleTimeString()} · updates as charge points change` : 'Loading…'}
           </Typography>
         </Box>
         <ToggleButtonGroup exclusive size="small" value={days} onChange={(_, next) => next && setDays(next)} aria-label="Time range">

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Alert, Button, Chip, Divider, Drawer, IconButton, Stack, Table, TableBody, TableCell, TableRow, Typography } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
 import { api } from '../../api/client.js';
+import { subscribeLive } from '../../api/live.js';
 import { StationNotices } from '../DriverNotices.jsx';
 import {
   AMENITY_OPTIONS,
@@ -15,7 +16,8 @@ import {
   standardName,
 } from './locatorFormat.js';
 
-const REFRESH_MS = 15000;
+// Changes that alter a charge point's state, price or queue.
+const DETAIL_MODELS = new Set(['station', 'connector', 'reservation', 'queueEntry', 'priceRule']);
 
 // Chips for a short list of labels, e.g. the amenities or parking a site offers.
 function Chips({ labels }) {
@@ -78,10 +80,12 @@ export function ChargerDetailDrawer({ stationId, onClose, onJoin, lockedOut = fa
         .then((res) => !cancelled && setStation(res.data))
         .catch(() => !cancelled && setError('This charge point could not be loaded.'));
     load();
-    const timer = setInterval(load, REFRESH_MS);
+    const unsubscribe = subscribeLive('/api/locator/live', (notice) => {
+      if (!notice || DETAIL_MODELS.has(notice.model)) load();
+    });
     return () => {
       cancelled = true;
-      clearInterval(timer);
+      unsubscribe();
     };
   }, [stationId]);
 
@@ -192,7 +196,7 @@ export function ChargerDetailDrawer({ stationId, onClose, onJoin, lockedOut = fa
             {target.waitingCount === 0
               ? 'No one is waiting.'
               : `${target.waitingCount} ${target.waitingCount === 1 ? 'person is' : 'people are'} waiting${station.zone ? ' for this zone' : ''}.`}{' '}
-            Live status refreshes every 15 seconds.
+            Live status updates as it changes.
           </Typography>
         </Stack>
       )}

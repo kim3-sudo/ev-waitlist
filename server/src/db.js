@@ -1,6 +1,7 @@
 import { PrismaClient } from '@prisma/client';
 import './loadRootEnv.js';
 import { currentTenantId, DEFAULT_TENANT_ID } from './tenancy/context.js';
+import { publishChange } from './services/liveUpdates.js';
 
 // Unscoped client. Use only for instance-level work (sites, the operator, the
 // default-site bootstrap) and in tests. Everything else uses `prisma` below.
@@ -64,6 +65,33 @@ function scopeWhere(where, tenantId) {
   return { ...(where ?? {}), tenantId };
 }
 
+// Writes that change rows. Each one tells connected pages that the model changed (see
+// services/liveUpdates.js), so they can fetch fresh data instead of polling.
+const WRITE_OPERATIONS = new Set(['create', 'createMany', 'update', 'updateMany', 'upsert', 'delete', 'deleteMany']);
+
+// Models written so often that announcing each write would only add noise.
+const QUIET_MODELS = new Set(['meterSample', 'ocpiOutbox']);
+
+// Applies the site rule to a query or write, then runs it.
+function runScoped(name, operation, args, query) {
+  if (!TENANT_SCOPED_MODELS.has(name)) return query(args);
+
+  const tenantId = currentTenantId();
+  if (operation === 'create') {
+    args.data = withTenant(args.data, tenantId);
+  } else if (operation === 'createMany') {
+    args.data = Array.isArray(args.data)
+      ? args.data.map((d) => withTenant(d, tenantId))
+      : withTenant(args.data, tenantId);
+  } else if (operation === 'upsert') {
+    args.where = scopeWhere(args.where, tenantId);
+    args.create = withTenant(args.create, tenantId);
+  } else if (READ_OR_WRITE_WHERE.has(operation) || operation.startsWith('find')) {
+    args.where = scopeWhere(args.where, tenantId);
+  }
+  return query(args);
+}
+
 // Scoped client: every query on a tenant-scoped model is limited to the current
 // site, and every create fills in that site.
 export const prisma = rawPrisma.$extends({
@@ -71,22 +99,12 @@ export const prisma = rawPrisma.$extends({
   query: {
     $allModels: {
       async $allOperations({ model, operation, args, query }) {
-        if (!TENANT_SCOPED_MODELS.has(lowerFirst(model))) return query(args);
-
-        const tenantId = currentTenantId();
-        if (operation === 'create') {
-          args.data = withTenant(args.data, tenantId);
-        } else if (operation === 'createMany') {
-          args.data = Array.isArray(args.data)
-            ? args.data.map((d) => withTenant(d, tenantId))
-            : withTenant(args.data, tenantId);
-        } else if (operation === 'upsert') {
-          args.where = scopeWhere(args.where, tenantId);
-          args.create = withTenant(args.create, tenantId);
-        } else if (READ_OR_WRITE_WHERE.has(operation) || operation.startsWith('find')) {
-          args.where = scopeWhere(args.where, tenantId);
+        const name = lowerFirst(model);
+        const result = await runScoped(name, operation, args, query);
+        if (WRITE_OPERATIONS.has(operation) && !QUIET_MODELS.has(name)) {
+          publishChange(name, result && typeof result === 'object' && 'id' in result ? result.id : null);
         }
-        return query(args);
+        return result;
       },
     },
   },

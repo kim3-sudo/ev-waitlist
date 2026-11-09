@@ -28,8 +28,6 @@ import { usePagedList } from '../api/paged.js';
 import { LoadMore } from '../components/LoadMore.jsx';
 import { DashboardView } from '../components/dashboard/DashboardView.jsx';
 
-const POLL_MS = 8000;
-
 // The admin home page: a dashboard, and the charge points list. The tab is kept in the
 // address (?view=stations) so a link can open either one.
 export function AdminStationsPage() {
@@ -53,7 +51,7 @@ export function AdminStationsPage() {
 function ChargePointsView() {
   const { can } = useAuth();
   const canManage = can('stations.manage');
-  const list = usePagedList('/api/admin/stations', { pollMs: POLL_MS });
+  const list = usePagedList('/api/admin/stations', { live: ['station', 'connector'] });
   const stations = list.items;
   const refresh = list.reload;
   const [wizardOpen, setWizardOpen] = useState(false);

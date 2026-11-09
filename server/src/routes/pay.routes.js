@@ -6,6 +6,7 @@ import { randomUUID } from 'node:crypto';
 import { siteConfig } from '../services/runtimeConfig.js';
 import { prisma } from '../db.js';
 import { tenantForChargeToken, tenantForHoldToken } from '../tenancy/middleware.js';
+import { openLiveStream } from '../services/liveUpdates.js';
 import {
   publicHold,
   startStripeHold,
@@ -34,6 +35,16 @@ function publicCharge(charge, settings) {
     paidAt: charge.paidAt,
   };
 }
+
+// Change notices for one payment, so the page sees it paid as soon as the webhook lands.
+payRouter.get('/:token/live', tenantForChargeToken, async (req, res) => {
+  const charge = await prisma.charge.findFirst({ where: { token: req.params.token }, select: { id: true } });
+  if (!charge) return res.status(404).json({ error: 'Payment link not found' });
+  openLiveStream(req, res, {
+    tenantId: req.tenantId ?? null,
+    match: (n) => n.model === 'charge' && (n.ids === null || n.ids.includes(charge.id)),
+  });
+});
 
 payRouter.get('/:token', tenantForChargeToken, async (req, res) => {
   const charge = await findChargeByToken(req.params.token);

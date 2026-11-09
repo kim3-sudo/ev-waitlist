@@ -1,12 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from './client.js';
+import { useLive } from './live.js';
 
 // Loads a paginated list from the API. A page is { data, nextCursor }.
 //
-// Reloads (after an edit, or on a poll) keep every page already on screen, so the list
-// does not jump back to the first page while someone is reading further down. A change
-// to `params` starts again from the first page.
-export function usePagedList(url, { params = {}, pageSize = 50, pollMs = 0, enabled = true } = {}) {
+// Reloads (after an edit, or when the server announces a change) keep every page already on
+// screen, so the list does not jump back to the first page while someone is reading further
+// down. A change to `params` starts again from the first page.
+//
+// `live` lists the data models whose changes refresh the list (see api/live.js). Admin only.
+export function usePagedList(url, { params = {}, pageSize = 50, live = [], enabled = true } = {}) {
   const [items, setItems] = useState([]);
   const [nextCursor, setNextCursor] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -75,11 +78,7 @@ export function usePagedList(url, { params = {}, pageSize = 50, pollMs = 0, enab
     reload();
   }, [reload, enabled]);
 
-  useEffect(() => {
-    if (!pollMs || !enabled) return undefined;
-    const id = setInterval(reload, pollMs);
-    return () => clearInterval(id);
-  }, [pollMs, reload, enabled]);
+  useLive(live.length ? '/api/admin/live' : null, live, () => reload(), { enabled });
 
   return { items, setItems, hasMore: Boolean(nextCursor), loading, error, reload, loadMore };
 }
