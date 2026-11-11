@@ -16,6 +16,8 @@ export const PERMISSIONS = [
   { key: 'branding.manage', group: 'Settings', label: 'Change branding, identifiers, and MFA policy' },
   { key: 'sso.manage', group: 'Settings', label: 'Configure single sign-on' },
   { key: 'system.manage', group: 'Settings', label: 'Change web addresses, CORS origin, and reservation window' },
+  // Also needs the installation administrator flag: the limits cover every site.
+  { key: 'rateLimits.manage', group: 'Settings', label: 'Change request rate limits (installation administrator only)' },
   { key: 'integrations.manage', group: 'Settings', label: 'Change payment provider keys and test connections' },
   { key: 'users.manage', group: 'Users', label: 'Manage users and roles' },
   { key: 'privacy.manage', group: 'Privacy', label: 'Set retention periods and erase a driver\'s personal data' },

@@ -34,6 +34,8 @@ process.env.JWT_SECRET = 'test-jwt-secret';
 process.env.CORS_ORIGIN = 'http://localhost:5173';
 process.env.PUBLIC_URL = 'http://localhost:4000';
 process.env.CONFIG_ENCRYPTION_KEY = 'test-config-encryption-key';
+// The suite signs in and calls the API far more often than a person would. rateLimit.test.js turns limits back on.
+process.env.RATE_LIMIT_DISABLED = '1';
 
 // Keep the generated Prisma client in step with schema.prisma.
 execFileSync(process.execPath, ['scripts/prisma.mjs', 'generate'], { cwd: serverDir, env: process.env, stdio: 'ignore' });

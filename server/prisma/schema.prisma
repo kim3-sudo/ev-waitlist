@@ -18,6 +18,14 @@ model Operator {
   updatedAt   DateTime @updatedAt
 }
 
+// Request rate limits for the whole installation (see rateLimit/rules.js). One row. `rules` is JSON:
+// only the limits an administrator changed from the defaults.
+model RateLimitSettings {
+  id        String   @id @default("singleton")
+  rules     String   @default("{}") // @longtext
+  updatedAt DateTime @updatedAt
+}
+
 // A site. Every tenant-scoped row belongs to exactly one site. An installation
 // with a single site uses the tenant with id "default" and never sees the
 // tenant concept in the UI.

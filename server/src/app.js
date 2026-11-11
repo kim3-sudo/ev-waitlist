@@ -54,6 +54,8 @@ import { ocpiRouter } from './ocpi/routes.js';
 import { adminOcpiRouter } from './routes/admin.ocpi.routes.js';
 import { adminAuditRouter } from './routes/admin.audit.routes.js';
 import { auditHttp } from './audit/httpAudit.js';
+import { adminRateLimitsRouter } from './routes/admin.rateLimits.routes.js';
+import { limit, limitConcurrent, addressKey, sessionKey } from './rateLimit/middleware.js';
 import { adminServiceAccountsRouter } from './routes/admin.serviceAccounts.routes.js';
 import { apiV1Router } from './routes/api.v1/index.js';
 import { driverRouter } from './routes/driver.routes.js';
@@ -61,13 +63,52 @@ import { API_DOCS_DIR } from './apiDocs.js';
 import { openLiveStream } from './services/liveUpdates.js';
 import { currentTenantId } from './tenancy/context.js';
 
+// Express's "trust proxy" setting from TRUST_PROXY: a hop count (1), true/false, or an address list.
+// Unset leaves it off. Set it only to what really sits in front of the server: a wrong value lets
+// a client claim any address it likes.
+export function trustProxySetting(value) {
+  if (value === undefined || value === '') return undefined;
+  if (value === 'true') return true;
+  if (value === 'false') return false;
+  if (/^\d+$/.test(value)) return Number(value);
+  return value;
+}
+
+const WEBHOOK_PATH = /^\/api(\/t\/[^/]+)?\/payments\/(stripe|square)\/webhook$/;
+
+// Requests the general limit leaves alone: payment provider webhooks (they come from the provider's
+// addresses, and a refused one is retried for days) and the health check.
+function exemptFromLimits(req) {
+  const path = req.originalUrl.split('?')[0];
+  return path === '/api/health' || WEBHOOK_PATH.test(path);
+}
+
+// Changes made without signing in, to the public pages' routes. Sign-in has its own rules.
+function isPublicWrite(req) {
+  if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') return false;
+  const path = req.originalUrl.split('?')[0];
+  if (exemptFromLimits(req)) return false;
+  return !/^\/api\/(admin|v1|auth|device-files|docs)(\/|$)/.test(path);
+}
+
 // Builds the REST API's Express app. Deliberately has no side effects
 // (no listen(), no OCPP central system, no background timers) so it can be
 // mounted standalone -- e.g. under supertest in the test suite.
 export function createApp() {
   const app = express();
+  // Behind a reverse proxy, every request seems to come from the proxy unless this names it. Rate
+  // limits and the audit log rely on the real address. See docs/rate-limiting.md.
+  const trustProxy = trustProxySetting(process.env.TRUST_PROXY);
+  if (trustProxy !== undefined) app.set('trust proxy', trustProxy);
   // Read per request, so a change in the admin UI applies without a restart.
   app.use(cors({ origin: (origin, callback) => callback(null, allowedOrigins().has(origin)) }));
+  // Rate limits (see rateLimit/rules.js). Before the body is read, so a flood is turned away cheaply.
+  // Sign-in and code routes add their own, stricter limits.
+  app.use('/api', limit('general.ip', addressKey, { skip: exemptFromLimits }));
+  app.use('/api', limitConcurrent('liveStreams.ip', addressKey, { skip: (req) => !(req.method === 'GET' && /\/live$/.test(req.path)) }));
+  app.use('/api', limit('publicWrite.ip', addressKey, { skip: (req) => !isPublicWrite(req) }));
+  app.use(['/api/admin', '/api/v1'], limit('authenticated.session', (req) => sessionKey(req) ?? addressKey(req)));
+  app.use('/api/device-files', limit('deviceFiles.ip', addressKey));
   // Must come before express.json() so the signature is checked against the raw bytes.
   app.post('/api/payments/stripe/webhook', express.raw({ type: 'application/json' }), stripeWebhookHandler);
   app.post('/api/payments/square/webhook', express.raw({ type: 'application/json' }), squareWebhookHandler);
@@ -160,6 +201,7 @@ export function createApp() {
   app.use('/api/admin/email', requirePermission('integrations.manage'), adminEmailRouter);
   app.use('/api/admin/sms', requirePermission('integrations.manage'), adminSmsRouter);
   app.use('/api/admin/system', requirePermission('system.manage'), adminSystemRouter);
+  app.use('/api/admin/rate-limits', requirePermission('rateLimits.manage'), requireInstanceAdmin, adminRateLimitsRouter);
   app.use('/api/admin/sites', requirePermission('sites.manage'), requireInstanceAdmin, adminSitesRouter);
   app.use('/api/admin/operator', requirePermission('sites.manage'), requireInstanceAdmin, adminOperatorRouter);
   app.use('/api/admin/privacy', requirePermission('privacy.manage'), adminPrivacyRouter);

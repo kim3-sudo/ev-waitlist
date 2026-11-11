@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { limit, addressKey } from '../rateLimit/middleware.js';
 import { prisma, rawPrisma } from '../db.js';
 import { DRIVER_ROLE } from './permissions.js';
 import { currentTenantId } from '../tenancy/context.js';
@@ -19,6 +20,10 @@ import {
 // account. Accounts with admin permissions are refused here: they sign in with a password and
 // two-factor code at /api/auth/login, so the second factor cannot be skipped.
 export const signInCodeRouter = Router();
+
+// Requests for a code, and codes typed in, share one limit per address. The code itself already
+// allows 5 wrong tries, and 5 requests an hour per e-mail address (services/driverAccounts.js).
+signInCodeRouter.use(limit('signInCode.ip', addressKey, { audit: true }));
 
 const CODE_PATTERN = /^\d{6}$/;
 

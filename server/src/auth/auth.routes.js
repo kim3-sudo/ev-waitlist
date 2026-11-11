@@ -12,6 +12,7 @@ import { requireAdmin, requireAdminAllowingPasswordChange } from './auth.middlew
 import { tenantForAdminEmail, tenantFromAdminToken } from '../tenancy/middleware.js';
 import { recordAudit } from '../audit/record.js';
 import { currentTenantId } from '../tenancy/context.js';
+import { limit, addressKey, emailKey, preAuthAccountKey } from '../rateLimit/middleware.js';
 
 // Sign-in events. Recorded with the e-mail the sign-in was attempted with, so a failed
 // attempt on an unknown account can still be traced.
@@ -95,7 +96,14 @@ async function resolveAdminForMfaStep(req) {
   return null;
 }
 
-authRouter.post('/login', tenantForAdminEmail, async (req, res) => {
+// Limited by address (every attempt) and by account (wrong passwords only), so one address cannot
+// try many passwords and many addresses cannot keep trying one account.
+authRouter.post(
+  '/login',
+  limit('login.ip', addressKey, { audit: true }),
+  limit('login.account', emailKey, { mode: 'failures', audit: true }),
+  tenantForAdminEmail,
+  async (req, res) => {
   const { email, password } = req.body ?? {};
   if (!email || !password) {
     return res.status(400).json({ error: 'email and password are required' });
@@ -126,7 +134,12 @@ authRouter.post('/login', tenantForAdminEmail, async (req, res) => {
   res.json(await sessionBody(admin));
 });
 
-authRouter.post('/mfa/verify', tenantFromAdminToken, async (req, res) => {
+authRouter.post(
+  '/mfa/verify',
+  limit('mfa.ip', addressKey, { audit: true }),
+  limit('mfa.account', preAuthAccountKey, { mode: 'failures', audit: true }),
+  tenantFromAdminToken,
+  async (req, res) => {
   const { preAuthToken, code } = req.body ?? {};
   if (!preAuthToken || !code) {
     return res.status(400).json({ error: 'preAuthToken and code are required' });

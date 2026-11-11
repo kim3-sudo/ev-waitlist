@@ -43,6 +43,7 @@ Each site checks events with its own secret.
 - [ ] Turn on multi-factor sign-in for administrators under **Users** or **Branding**.
 - [ ] Give each person their own account. Use custom roles to grant the least permission they need.
 - [ ] Configure single sign-on per site under **Single sign-on**, if you use it.
+- [ ] Behind a reverse proxy, set `TRUST_PROXY`. Review the request rate limits ([Rate limiting](rate-limiting.md)).
 
 ## 5. Stations
 

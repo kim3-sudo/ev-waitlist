@@ -2,12 +2,16 @@ import { rawPrisma as prisma, ensureDefaultTenant } from '../../src/db.js';
 import { loadAllSites } from '../../src/services/runtimeConfig.js';
 import { DEFAULT_TENANT_ID } from '../../src/tenancy/context.js';
 import { clearAuditSettingsCache } from '../../src/audit/settings.js';
+import { clearRateLimitCache } from '../../src/rateLimit/rules.js';
+import { resetLimiter } from '../../src/rateLimit/limiter.js';
+import { resetOpenStreams } from '../../src/rateLimit/middleware.js';
 
 // Wipes all app tables between tests, for every site. Uses the unscoped client
 // so it also clears rows belonging to sites other than the default one.
 // Children first so this works regardless of whether SQLite FK cascades are active.
 export async function resetDb() {
   await prisma.$transaction([
+    prisma.rateLimitSettings.deleteMany(),
     prisma.webhookDelivery.deleteMany(),
     prisma.webhookEndpoint.deleteMany(),
     prisma.subscription.deleteMany(),
@@ -71,6 +75,9 @@ export async function resetDb() {
   });
   await prisma.operator.update({ where: { id: 'singleton' }, data: { name: '', countryCode: '', partyId: '' } });
   clearAuditSettingsCache();
+  clearRateLimitCache();
+  resetLimiter();
+  resetOpenStreams();
   // Site settings are cached in memory, so reload them from the (now empty) rows.
   await loadAllSites();
 }

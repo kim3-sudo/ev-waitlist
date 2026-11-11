@@ -13,11 +13,13 @@ import { startStationWatch } from './services/stationWatch.js';
 import { startSmartChargingTicker } from './services/smartChargingTicker.js';
 import { runWithTenant } from './tenancy/context.js';
 import { startProviderHealthChecks } from './services/payments/providerOutage.js';
+import { loadRateLimits } from './rateLimit/rules.js';
 import { redispatchAllStations } from './services/dispatcher.js';
 
 // Settings come from the database, so load them before anything starts serving.
 await ensureDefaultTenant();
 await initRuntimeConfig();
+await loadRateLimits();
 
 const app = createApp();
 
