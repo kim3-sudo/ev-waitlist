@@ -165,7 +165,7 @@ Events: charge paid, charge reversed, session started, session stopped, station 
 
 Each post is JSON with headers `X-Plugyard-Event`, `X-Plugyard-Delivery`, and `X-Plugyard-Signature`. The signature has the form `t=<unix seconds>,v1=<HMAC-SHA256 of "<t>.<body>">`, keyed with the endpoint secret. Verify the signature, and reject timestamps older than five minutes.
 
-Failed posts retry after 1, 2, 4 minutes, and so on, up to six hours, then stop after ten attempts. Use the delivery log to see results and retry an event. The server blocks addresses on private networks unless you set `WEBHOOK_ALLOW_PRIVATE_NETWORKS=1`.
+Failed posts retry after 1, 2, 4 minutes, and so on, up to six hours, then stop after ten attempts. Use the delivery log to see results and retry an event. Addresses must be `https://` with no user name or password. The server looks up the name when it sends each post, and refuses any address on a private, loopback, link-local or reserved network (including `169.254.169.254` and IPv6 forms of these), even if the name pointed somewhere else when you saved it. It does not follow redirects, and it stops reading a reply after 64 KB. To post to a receiver on a private network, set `WEBHOOK_ALLOW_PRIVATE_NETWORKS=1`; that also allows `http://`.
 
 ## Connection keys
 

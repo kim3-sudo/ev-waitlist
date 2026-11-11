@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Container, Typography, Paper, Stack, TextField, Button, Alert, Divider } from '@mui/material';
 import { api } from '../api/client.js';
+import { useAuth } from '../context/AuthContext.jsx';
 import { MfaEnrollForm } from '../components/MfaEnrollForm.jsx';
 import { ChangePasswordForm } from '../components/ChangePasswordForm.jsx';
 import { AlertChoices } from '../components/AlertChoices.jsx';
@@ -87,6 +88,7 @@ function TwoFactorSection({ me, onChanged }) {
 }
 
 export function AccountPage() {
+  const { logoutEverywhere } = useAuth();
   const [me, setMe] = useState(null);
 
   async function refresh() {
@@ -134,6 +136,19 @@ export function AccountPage() {
           <ChangePasswordForm />
         </Paper>
       )}
+
+      <Paper variant="outlined" sx={{ p: 3, mt: 3 }}>
+        <Typography variant="subtitle1" fontWeight={600} gutterBottom>
+          Sign out everywhere
+        </Typography>
+        <Divider sx={{ mb: 2 }} />
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+          Ends every sign-in of your account, on every device, including this one. Use it if a device is lost or you think someone else has access.
+        </Typography>
+        <Button variant="outlined" color="error" onClick={() => logoutEverywhere()}>
+          Sign out everywhere
+        </Button>
+      </Paper>
     </Container>
   );
 }

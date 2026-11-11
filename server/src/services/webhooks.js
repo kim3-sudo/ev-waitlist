@@ -1,8 +1,8 @@
 import crypto from 'node:crypto';
-import net from 'node:net';
 import { rawPrisma } from '../db.js';
 import { currentTenantId } from '../tenancy/context.js';
 import { encryptSecret, decryptSecret } from '../utils/secretBox.js';
+import { safeRequest, urlProblem as addressUrlProblem } from '../utils/safeHttp.js';
 
 // Webhooks: the server posts events to the URLs an admin registers. Every post is signed with the
 // endpoint's secret, so the receiver can check it came from this server. Each delivery is retried with
@@ -51,35 +51,15 @@ export function parseEvents(input) {
   return { value: clean.join(',') };
 }
 
-// Checks a destination. It must be https, and must not point at a private or loopback address, so the
-// server cannot be used to reach the internal network. Operators who run receivers on private networks
-// can allow that with WEBHOOK_ALLOW_PRIVATE_NETWORKS=1.
-export function urlProblem(url) {
-  let u;
-  try {
-    u = new URL(String(url ?? ''));
-  } catch {
-    return 'Enter a full web address, starting with https://';
-  }
-  if (u.protocol !== 'https:' && !(u.protocol === 'http:' && process.env.WEBHOOK_ALLOW_PRIVATE_NETWORKS === '1')) {
-    return 'The address must start with https://';
-  }
-  if (process.env.WEBHOOK_ALLOW_PRIVATE_NETWORKS === '1') return null;
-  const host = u.hostname.replace(/^\[|\]$/g, '');
-  if (host === 'localhost' || host.endsWith('.localhost')) return 'The address must not be on this machine';
-  if (net.isIP(host)) {
-    if (isPrivateAddress(host)) return 'The address must not be on a private network';
-  }
-  return null;
-}
+const allowPrivate = () => process.env.WEBHOOK_ALLOW_PRIVATE_NETWORKS === '1';
 
-function isPrivateAddress(ip) {
-  if (net.isIPv6(ip)) {
-    const lower = ip.toLowerCase();
-    return lower === '::1' || lower.startsWith('fc') || lower.startsWith('fd') || lower.startsWith('fe80');
-  }
-  const [a, b] = ip.split('.').map(Number);
-  return a === 10 || a === 127 || a === 0 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 169 && b === 254);
+// Checks a destination when it is saved. It must be https, with no user name or password, and must
+// not name a private or loopback address, so the server cannot be used to reach the internal
+// network. Operators who run receivers on private networks can allow that with
+// WEBHOOK_ALLOW_PRIVATE_NETWORKS=1. A name that points at a private address is caught later, when
+// the post is sent (see utils/safeHttp.js), because DNS can change after this check.
+export function urlProblem(url) {
+  return addressUrlProblem(url, { allowPrivate: allowPrivate() });
 }
 
 // The signature header: t=<unix seconds>,v1=<HMAC-SHA256 of "<t>.<body>" with the secret>.
@@ -113,6 +93,20 @@ export async function emitEvent(type, data = {}, tenantId = currentTenantId()) {
   return eventId;
 }
 
+// Posts to the endpoint's address. Resolves the name itself and refuses private addresses, does not
+// follow redirects, and gives up on a slow or oversized reply. Answers like fetch: { status }.
+async function postSafely(url, init) {
+  const { status } = await safeRequest(url, {
+    method: init.method,
+    headers: init.headers,
+    body: init.body,
+    timeoutMs: REQUEST_TIMEOUT_MS,
+    maxBytes: 64 * 1024,
+    allowPrivate: allowPrivate(),
+  });
+  return { status };
+}
+
 async function sendOnce(endpoint, delivery, fetchImpl) {
   const secret = decryptSecret(endpoint.secret);
   const timestamp = Math.floor(Date.now() / 1000);
@@ -134,7 +128,7 @@ async function sendOnce(endpoint, delivery, fetchImpl) {
 }
 
 // Sends the deliveries that are due. Run on a timer. Returns how many were attempted.
-export async function dispatchWebhookDeliveries({ now = new Date(), limit = 50, fetchImpl = fetch } = {}) {
+export async function dispatchWebhookDeliveries({ now = new Date(), limit = 50, fetchImpl = postSafely } = {}) {
   const due = await rawPrisma.webhookDelivery.findMany({
     where: { status: 'PENDING', nextAttemptAt: { lte: now } },
     orderBy: [{ nextAttemptAt: 'asc' }, { id: 'asc' }],

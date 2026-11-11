@@ -1,6 +1,5 @@
 import crypto from 'node:crypto';
-import jwt from 'jsonwebtoken';
-import { config } from '../config.js';
+import { verifyToken } from '../auth/sessionToken.js';
 import { recordAudit } from '../audit/record.js';
 import { consume, peek, record } from './limiter.js';
 import { ensureFresh, ruleSettings } from './rules.js';
@@ -49,12 +48,8 @@ export function emailKey(req) {
 export function preAuthAccountKey(req) {
   const token = req.body?.preAuthToken;
   if (typeof token !== 'string') return null;
-  try {
-    const payload = jwt.verify(token, config.jwtSecret);
-    return payload.type === 'mfa' ? String(payload.sub) : null;
-  } catch {
-    return null;
-  }
+  const payload = verifyToken(token);
+  return payload?.type === 'mfa' ? String(payload.sub) : null;
 }
 
 // ---- refusing --------------------------------------------------------------------------------

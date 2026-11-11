@@ -2,7 +2,7 @@ import { prisma, rawPrisma } from '../db.js';
 import { runWithTenant } from '../tenancy/context.js';
 import { getPaymentSettings } from '../services/payments/paymentSettingsService.js';
 import { priceAdjusterForSession } from '../services/payments/priceRuleService.js';
-import { partnerRequest, theirTokenOf } from './client.js';
+import { partnerRequest } from './client.js';
 import { locationOf, tariffOf, sessionOf, cdrOf, evseStatusOf, evseUid, stationIsPublishable, TARIFF_ID } from './mappers.js';
 
 // Messages to roaming partners. Each row names what to send (kind + refId); the
@@ -135,8 +135,7 @@ export async function dispatchDue(now = new Date(), limit = 50) {
       continue;
     }
 
-    const theirToken = theirTokenOf(partner);
-    const res = await partnerRequest(theirToken, request.method, request.url, request.body);
+    const res = await partnerRequest(partner, request.method, request.url, request.body);
     if (res.ok) {
       await prisma.ocpiOutbox.update({ where: { id: row.id }, data: { status: 'DONE', lastError: null } });
       sent += 1;

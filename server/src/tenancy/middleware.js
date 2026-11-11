@@ -1,6 +1,5 @@
-import jwt from 'jsonwebtoken';
 import { rawPrisma } from '../db.js';
-import { config } from '../config.js';
+import { verifyToken } from '../auth/sessionToken.js';
 import { enterTenant } from './context.js';
 import { ensureSiteLoaded } from '../services/runtimeConfig.js';
 
@@ -63,12 +62,8 @@ export async function tenantFromAdminToken(req, res, next) {
   if (req.body?.preAuthToken) candidates.push(req.body.preAuthToken);
 
   for (const token of candidates) {
-    let payload;
-    try {
-      payload = jwt.verify(token, config.jwtSecret);
-    } catch {
-      continue;
-    }
+    const payload = verifyToken(token);
+    if (!payload) continue;
     const admin = await rawPrisma.admin.findUnique({ where: { id: payload.sub }, select: { tenantId: true } });
     if (admin) {
       await ensureSiteLoaded(admin.tenantId);

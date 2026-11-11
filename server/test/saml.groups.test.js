@@ -61,7 +61,10 @@ describe('NameID formats', () => {
 
     const res = await acs({ email: 'new@example.com', nameId: PERSISTENT_ID, nameIdFormat: 'persistent' });
     assert.equal(res.status, 302);
-    assert.equal(new URL(res.headers.location).searchParams.get('email'), 'old@example.com');
+    // The redirect carries only a one-time code. The session it buys belongs to the old account.
+    const code = new URL(res.headers.location).searchParams.get('code');
+    const session = await request(app).post('/api/auth/saml/exchange').send({ code });
+    assert.equal(session.body.email, 'old@example.com');
     assert.equal(await prisma.admin.findUnique({ where: { email: 'new@example.com' } }), null);
   });
 

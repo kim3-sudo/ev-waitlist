@@ -1,6 +1,6 @@
 import { prisma } from '../db.js';
 import { currentRoaming } from '../services/roaming.js';
-import { partnerRequest, theirTokenOf } from './client.js';
+import { partnerRequest } from './client.js';
 
 // Decides whether a roaming partner's driver token may charge at a station.
 //
@@ -29,9 +29,9 @@ export async function roamingAuthorize(stationId, uid) {
   const endpoints = JSON.parse(token.partner.endpoints || '{}');
   if (endpoints.tokens) {
     const res = await partnerRequest(
-      theirTokenOf(token.partner),
+      token.partner,
       'POST',
-      `${endpoints.tokens}/${token.country}/${token.party}/${token.uid}/authorize`,
+      `${endpoints.tokens}/${[token.country, token.party, token.uid].map(encodeURIComponent).join('/')}/authorize`,
       { location_id: stationId },
     );
     const allowed = res.ok && res.body?.data?.allowed === 'ALLOWED';

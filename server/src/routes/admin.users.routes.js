@@ -4,6 +4,7 @@ import bcrypt from 'bcryptjs';
 import { prisma } from '../db.js';
 import { resolvePermissions, roleExists, missingPermissions } from '../services/roleService.js';
 import { DRIVER_ROLE } from '../auth/permissions.js';
+import { revokeSessions } from '../auth/sessionToken.js';
 import { revokeCredentials } from '../services/wallet/credentialService.js';
 import { clearCacheEverywhere } from '../services/stationCommands.js';
 
@@ -113,11 +114,24 @@ adminUsersRouter.patch('/:id', async (req, res) => {
   }
 
   const data = {};
-  if (resetMfa) Object.assign(data, { mfaSecret: null, mfaEnabled: false });
+  // Resetting someone's second factor also signs them out everywhere.
+  if (resetMfa) Object.assign(data, { mfaSecret: null, mfaEnabled: false, sessionVersion: { increment: 1 } });
   if (role !== undefined) data.role = role;
 
   const admin = await prisma.admin.update({ where: { id: target.id }, data });
   res.json(toDTO(admin));
+});
+
+// Signs a user out everywhere (a lost laptop, a leaver, a suspected stolen token). Their next request
+// with any older token is refused, and they sign in again.
+adminUsersRouter.post('/:id/revoke-sessions', async (req, res) => {
+  const target = await prisma.admin.findUnique({ where: { id: req.params.id } });
+  if (!target) return res.status(404).json({ error: 'User not found' });
+  if (!(await canActOn(req.admin.permissions, target.role))) {
+    return res.status(403).json({ error: "You can't sign out a user whose role has permissions you don't have" });
+  }
+  await revokeSessions(target.id, prisma);
+  res.json({ ok: true });
 });
 
 adminUsersRouter.delete('/:id', async (req, res) => {

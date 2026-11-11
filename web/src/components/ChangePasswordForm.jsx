@@ -1,8 +1,10 @@
 import { useState } from 'react';
 import { Stack, TextField, Button, Alert } from '@mui/material';
 import { api } from '../api/client.js';
+import { useAuth } from '../context/AuthContext.jsx';
 
 export function ChangePasswordForm({ onSuccess }) {
+  const { replaceToken } = useAuth();
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -20,7 +22,8 @@ export function ChangePasswordForm({ onSuccess }) {
     }
     setSubmitting(true);
     try {
-      await api.put('/api/auth/password', { currentPassword, newPassword });
+      const { data } = await api.put('/api/auth/password', { currentPassword, newPassword });
+      replaceToken(data.token);
       setSuccess(true);
       setCurrentPassword('');
       setNewPassword('');

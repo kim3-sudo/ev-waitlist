@@ -6,7 +6,7 @@ import { app } from './support/testApp.js';
 import { resetDb } from './support/db.js';
 import { createAdmin } from './support/factories.js';
 import { buildSignedSamlResponse, idpCertPem } from '../src/simulator/samlIdp.js';
-import { prisma } from '../src/db.js';
+import { prisma, rawPrisma } from '../src/db.js';
 import { siteConfig } from '../src/services/runtimeConfig.js';
 
 let token;
@@ -78,8 +78,43 @@ describe('SAML SP, once configured', () => {
     assert.equal(res.status, 302);
     const redirect = new URL(res.headers.location);
     assert.equal(redirect.origin + redirect.pathname, `${siteConfig().corsOrigin}/sso/callback`);
-    assert.equal(redirect.searchParams.get('email'), existing.email);
-    assert.ok(redirect.searchParams.get('token'));
+    // No session token or e-mail address in the web address: only a one-time code.
+    assert.equal(redirect.searchParams.get('token'), null);
+    assert.equal(redirect.searchParams.get('email'), null);
+    assert.equal(res.headers.location.includes(existing.email), false);
+    const code = redirect.searchParams.get('code');
+    assert.ok(code);
+
+    const exchanged = await request(app).post('/api/auth/saml/exchange').send({ code });
+    assert.equal(exchanged.status, 200);
+    assert.equal(exchanged.body.email, existing.email);
+    assert.ok(exchanged.body.token);
+    const me = await request(app).get('/api/auth/me').set('Authorization', `Bearer ${exchanged.body.token}`);
+    assert.equal(me.status, 200);
+
+    // The code works once.
+    const again = await request(app).post('/api/auth/saml/exchange').send({ code });
+    assert.equal(again.status, 401);
+  });
+
+  it('refuses an expired, unknown, or malformed one-time code', async () => {
+    await configureSaml();
+    const existing = await createAdmin({ password: null, email: 'sso-user@example.com' });
+    const res = await request(app).post('/api/auth/saml/acs').type('form').send({ SAMLResponse: buildSignedSamlResponse({ email: existing.email }) });
+    const code = new URL(res.headers.location).searchParams.get('code');
+    await rawPrisma.ssoLoginCode.updateMany({ data: { expiresAt: new Date(Date.now() - 1000) } });
+    assert.equal((await request(app).post('/api/auth/saml/exchange').send({ code })).status, 401);
+    for (const bad of [undefined, '', 'short', 'x'.repeat(500), { $ne: 1 }, 12345678901234567890]) {
+      assert.equal((await request(app).post('/api/auth/saml/exchange').send({ code: bad })).status, 401);
+    }
+  });
+
+  it('does not repeat a validation error back to the browser as HTML', async () => {
+    await configureSaml();
+    const res = await request(app).post('/api/auth/saml/acs').type('form').send({ SAMLResponse: Buffer.from('<script>alert(1)</script>').toString('base64') });
+    assert.equal(res.status, 401);
+    assert.match(res.headers['content-type'], /text\/plain/);
+    assert.equal(res.text, 'SAML login failed');
   });
 
   it('auto-provisions a new SSO-only account when autoProvision is on', async () => {

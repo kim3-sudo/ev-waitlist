@@ -40,3 +40,14 @@ Add each vehicle with every plug it can use, including adapters. For example, an
 | `GET`/`POST /api/driver/vehicles`, `PUT`/`DELETE /api/driver/vehicles/:id` | Driver | Manage vehicles |
 
 For a named site, use `/api/t/<slug>/auth/code` and `/api/t/<slug>/driver`. Each driver account belongs to one site. An email address can have one account across the installation.
+
+## Sessions and signing out
+
+A sign-in is a token that lasts 12 hours for an admin and 30 days for a driver. Each account has a session version, and a token works only while it matches the account's current version. These raise the version, which ends every sign-in of the account at once:
+
+- changing the password (the device that changed it gets a fresh token and stays signed in);
+- turning off two-factor sign-in, or an administrator resetting it;
+- **Sign out everywhere** on the account page (`POST /api/auth/logout-all`);
+- an administrator with the user-management permission choosing to sign a user out (`POST /api/admin/users/{id}/revoke-sessions`).
+
+Single sign-on (SAML) ends in a one-time code in the web address, which the page trades for a session (`POST /api/auth/saml/exchange`). The code works once and expires after a minute. No session token is put in a web address.

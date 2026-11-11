@@ -35,6 +35,15 @@ OCPI modules live at `/ocpi/<site address>/2.2.1/...`.
 
 When a charge point asks to authorize a partner's token, the server checks it. The server won't give a connector held for a waitlisted driver to a roaming token. If the partner offers a tokens endpoint, the partner decides in real time. Otherwise, the token's whitelist setting decides.
 
+## What the server will call
+
+A partner gives the server addresses to call, so the server treats them as untrusted:
+
+- Addresses must be `https://` and must not resolve to a private, loopback, link-local or reserved network. The name is looked up when each request is sent.
+- Every address a partner lists (its version list, its 2.2.1 endpoints, and the URLs it sends for command results) must be on the **same host and port** as the versions address the partner registered with. The server sends the partner's token only there. A partner whose modules live on a different host is refused with a message that names the address.
+- Redirects are not followed, and a reply over 2 MB is dropped.
+- To roam with a partner on a private network, or over `http://`, set `OCPI_ALLOW_PRIVATE_NETWORKS=1` on the server.
+
 ## Handle outages
 
 Outbound messages go into a queue, and the server retries each one with backoff up to ten times. The queue sends every 15 seconds. To send now, select **Send queued messages now**.

@@ -1,5 +1,4 @@
 import crypto from 'node:crypto';
-import jwt from 'jsonwebtoken';
 import { config } from '../config.js';
 import { prisma, rawPrisma } from '../db.js';
 import { currentTenantId } from '../tenancy/context.js';
@@ -10,6 +9,7 @@ import { contactProblem } from './notifier.js';
 import { looksLikeEmail, normalizePhone } from './contact.js';
 import { CONNECTOR_STANDARDS } from '../ocpi/mappers.js';
 import { DRIVER_PERMISSION, isDriverOnly } from '../auth/permissions.js';
+import { readSessionToken, sessionIsCurrent, signSessionToken } from '../auth/sessionToken.js';
 
 // Driver accounts are ordinary accounts (the Admin table) with the driver role, so they use the
 // same sign-in tokens and permission checks as everyone else. A driver signs in with a one-time
@@ -27,16 +27,10 @@ const SESSION_TTL = '30d';
 export async function signedInDriver(req) {
   const [scheme, token] = (req.headers.authorization ?? '').split(' ');
   if (scheme !== 'Bearer' || !token) return null;
-  let payload;
-  try {
-    payload = jwt.verify(token, config.jwtSecret);
-  } catch {
-    return null;
-  }
-  // A typed token (the MFA pre-auth token) is not a session.
-  if (payload.type !== undefined) return null;
+  const payload = readSessionToken(token);
+  if (!payload) return null;
   const account = await rawPrisma.admin.findUnique({ where: { id: payload.sub } });
-  if (!account || account.tenantId !== currentTenantId()) return null;
+  if (!account || account.tenantId !== currentTenantId() || !sessionIsCurrent(payload, account)) return null;
   const permissions = await resolvePermissions(account.role);
   return permissions.includes(DRIVER_PERMISSION) ? account : null;
 }
@@ -123,9 +117,7 @@ export async function sendSignInCode(email, code) {
 
 // The session a driver gets. The same shape as an admin sign-in, so the client handles both.
 export async function driverSession(account) {
-  const token = jwt.sign({ sub: account.id, email: account.email, tenantId: account.tenantId }, config.jwtSecret, {
-    expiresIn: SESSION_TTL,
-  });
+  const token = signSessionToken(account, SESSION_TTL);
   return {
     token,
     email: account.email,

@@ -18,6 +18,16 @@ model Operator {
   updatedAt   DateTime @updatedAt
 }
 
+// A one-time code that SAML single sign-on hands the browser in place of a session token, so the
+// token never appears in a web address. It is traded for a session once, within a minute.
+model SsoLoginCode {
+  id        String   @id @default(cuid())
+  codeHash  String   @unique
+  adminId   String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+}
+
 // Request rate limits for the whole installation (see rateLimit/rules.js). One row. `rules` is JSON:
 // only the limits an administrator changed from the defaults.
 model RateLimitSettings {
@@ -131,6 +141,9 @@ model Admin {
   passwordHash       String?
   mfaSecret          String?
   mfaEnabled         Boolean         @default(false)
+  // Counted up to sign the account out everywhere. Session tokens carry the number they were made
+  // with, and are refused once it no longer matches (see auth/sessionToken.js).
+  sessionVersion     Int             @default(0)
   // Driver details, kept on the account. A driver account is an account with the DRIVER role
   // (see auth/permissions.js), so admins can also be drivers with the same e-mail.
   name               String?

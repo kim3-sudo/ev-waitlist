@@ -1,3 +1,4 @@
+process.env.OCPI_ALLOW_PRIVATE_NETWORKS = '1'; // the test partners listen on 127.0.0.1
 import { describe, it, beforeEach, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';

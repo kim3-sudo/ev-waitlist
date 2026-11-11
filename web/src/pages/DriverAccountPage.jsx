@@ -81,7 +81,7 @@ function WalletPassCard({ onError }) {
 
 // The driver's own account: their details, password, and vehicles with the plugs each can use.
 export function DriverAccountPage() {
-  const { logout } = useAuth();
+  const { logout, logoutEverywhere } = useAuth();
   const navigate = useNavigate();
   const [account, setAccount] = useState(null);
   const [loadError, setLoadError] = useState('');
@@ -127,6 +127,16 @@ export function DriverAccountPage() {
             }}
           >
             Sign out
+          </Button>
+          <Button
+            variant="text"
+            color="inherit"
+            onClick={async () => {
+              await logoutEverywhere();
+              navigate(sitePath('/'));
+            }}
+          >
+            Sign out everywhere
           </Button>
         </Stack>
 
@@ -253,6 +263,7 @@ function DetailsForm({ account, onSaved, onError }) {
 }
 
 function PasswordForm({ hasPassword, onSaved, onError }) {
+  const { replaceToken } = useAuth();
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [saving, setSaving] = useState(false);
@@ -261,7 +272,8 @@ function PasswordForm({ hasPassword, onSaved, onError }) {
     e.preventDefault();
     setSaving(true);
     try {
-      await api.put('/api/driver/password', { currentPassword, newPassword });
+      const { data } = await api.put('/api/driver/password', { currentPassword, newPassword });
+      replaceToken(data.token);
       setCurrentPassword('');
       setNewPassword('');
       onSaved();

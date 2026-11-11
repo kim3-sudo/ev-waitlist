@@ -1,14 +1,13 @@
 import { Router } from 'express';
 import bcrypt from 'bcryptjs';
-import jwt from 'jsonwebtoken';
 import { authenticator } from 'otplib';
 import QRCode from 'qrcode';
 import { prisma } from '../db.js';
-import { config } from '../config.js';
 import { getSettings } from '../services/settingsService.js';
-import { resolvePermissions } from '../services/roleService.js';
 import { driverSession, isDriverAccount } from '../services/driverAccounts.js';
-import { requireAdmin, requireAdminAllowingPasswordChange } from './auth.middleware.js';
+import { requireAdmin, requireAdminAllowingPasswordChange, requireAnySession } from './auth.middleware.js';
+import { readSessionToken, revokeSessions, sessionIsCurrent, signPreAuthToken, verifyToken } from './sessionToken.js';
+import { sessionBody } from './sessionBody.js';
 import { tenantForAdminEmail, tenantFromAdminToken } from '../tenancy/middleware.js';
 import { recordAudit } from '../audit/record.js';
 import { currentTenantId } from '../tenancy/context.js';
@@ -38,28 +37,7 @@ function auditSignIn(req, res, { admin, email, outcome, reason }) {
 
 export const authRouter = Router();
 
-const MFA_TOKEN_TTL = '5m';
-
-function issueSessionToken(admin) {
-  return jwt.sign({ sub: admin.id, email: admin.email, tenantId: admin.tenantId }, config.jwtSecret, { expiresIn: '12h' });
-}
-
-// Body returned whenever a full session is granted. The client uses
-// mustChangePassword to send the admin to the forced passphrase change.
-async function sessionBody(admin) {
-  return {
-    token: issueSessionToken(admin),
-    email: admin.email,
-    role: admin.role,
-    permissions: await resolvePermissions(admin.role),
-    mustChangePassword: admin.mustChangePassword,
-    instanceAdmin: admin.instanceAdmin,
-  };
-}
-
-function issuePreAuthToken(admin) {
-  return jwt.sign({ sub: admin.id, type: 'mfa' }, config.jwtSecret, { expiresIn: MFA_TOKEN_TTL });
-}
+const issuePreAuthToken = signPreAuthToken;
 
 // Resolves the admin behind either a normal Bearer session token or a
 // short-lived pre-auth token passed in the body (used while an MFA
@@ -69,28 +47,20 @@ async function resolveAdminForMfaStep(req) {
   const header = req.headers.authorization ?? '';
   const [scheme, bearerToken] = header.split(' ');
   if (scheme === 'Bearer' && bearerToken) {
-    try {
-      const payload = jwt.verify(bearerToken, config.jwtSecret);
-      // A pre-auth token in the Bearer header must not count as a session.
-      if (payload.type === undefined) {
-        const admin = await prisma.admin.findUnique({ where: { id: payload.sub } });
-        if (admin) return { admin, preAuth: false };
-      }
-    } catch {
-      // fall through to preAuthToken
+    // A pre-auth token in the Bearer header is not a session, and neither is a revoked one.
+    const payload = readSessionToken(bearerToken);
+    if (payload) {
+      const admin = await prisma.admin.findUnique({ where: { id: payload.sub } });
+      if (admin && sessionIsCurrent(payload, admin)) return { admin, preAuth: false };
     }
   }
 
   const { preAuthToken } = req.body ?? {};
   if (preAuthToken) {
-    try {
-      const payload = jwt.verify(preAuthToken, config.jwtSecret);
-      if (payload.type !== 'mfa') return null;
-      const admin = await prisma.admin.findUnique({ where: { id: payload.sub } });
-      if (admin) return { admin, preAuth: true };
-    } catch {
-      return null;
-    }
+    const payload = verifyToken(preAuthToken);
+    if (payload?.type !== 'mfa') return null;
+    const admin = await prisma.admin.findUnique({ where: { id: payload.sub } });
+    if (admin) return { admin, preAuth: true };
   }
 
   return null;
@@ -145,13 +115,8 @@ authRouter.post(
     return res.status(400).json({ error: 'preAuthToken and code are required' });
   }
 
-  let payload;
-  try {
-    payload = jwt.verify(preAuthToken, config.jwtSecret);
-  } catch {
-    return res.status(401).json({ error: 'Invalid or expired session' });
-  }
-  if (payload.type !== 'mfa') return res.status(401).json({ error: 'Invalid or expired session' });
+  const payload = verifyToken(preAuthToken);
+  if (payload?.type !== 'mfa') return res.status(401).json({ error: 'Invalid or expired session' });
 
   const admin = await prisma.admin.findUnique({ where: { id: payload.sub } });
   if (!admin?.mfaEnabled || !admin.mfaSecret || !authenticator.check(code, admin.mfaSecret)) {
@@ -212,7 +177,9 @@ authRouter.post('/mfa/disable', requireAdmin, async (req, res) => {
     where: { id: admin.id },
     data: { mfaSecret: null, mfaEnabled: false },
   });
-  res.json({ ok: true });
+  // Turning off the second factor ends every other sign-in. This device gets a fresh token.
+  const updated = await revokeSessions(admin.id);
+  res.json({ ok: true, token: (await sessionBody(updated)).token });
 });
 
 authRouter.put('/password', requireAdminAllowingPasswordChange, async (req, res) => {
@@ -241,7 +208,18 @@ authRouter.put('/password', requireAdminAllowingPasswordChange, async (req, res)
     where: { id: admin.id },
     data: { passwordHash, mustChangePassword: false },
   });
+  // A new password ends every other sign-in (a stolen token stops working). This device keeps
+  // going with the fresh token in the reply.
+  const updated = await revokeSessions(admin.id);
   recordAudit({ tenantId: admin.tenantId, actorType: 'ADMIN', actorId: admin.id, actorLabel: admin.email, action: 'auth.password.change', targetType: 'admin', targetId: admin.id, targetLabel: admin.email, outcome: 'SUCCESS', reason: 'password changed', ip: req.ip, userAgent: req.headers['user-agent'] }, { res });
+  res.json({ ok: true, token: (await sessionBody(updated)).token });
+});
+
+// Signs this account out everywhere: every token made so far stops working, this one included.
+// Works for admins and drivers alike.
+authRouter.post('/logout-all', requireAnySession, async (req, res) => {
+  await revokeSessions(req.admin.sub);
+  recordAudit({ tenantId: req.admin.homeTenantId, actorType: 'ADMIN', actorId: req.admin.sub, actorLabel: req.admin.email, action: 'auth.logout-all', targetType: 'admin', targetId: req.admin.sub, targetLabel: req.admin.email, outcome: 'SUCCESS', reason: 'signed out everywhere', ip: req.ip, userAgent: req.headers['user-agent'] }, { res });
   res.json({ ok: true });
 });
 

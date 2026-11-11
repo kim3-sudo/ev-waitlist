@@ -1,9 +1,12 @@
 import { Router } from 'express';
 import express from 'express';
-import jwt from 'jsonwebtoken';
-import { config } from '../config.js';
 import { siteConfig } from '../services/runtimeConfig.js';
+import { rawPrisma } from '../db.js';
+import { runWithTenant } from '../tenancy/context.js';
+import { ensureSiteLoaded } from '../services/runtimeConfig.js';
 import { buildSamlClient, getSamlConfig, resolveSsoLogin } from '../services/samlService.js';
+import { consumeSsoCode, issueSsoCode } from './sessionToken.js';
+import { sessionBody } from './sessionBody.js';
 
 export const samlRouter = Router();
 
@@ -41,16 +44,32 @@ samlRouter.post('/acs', express.urlencoded({ extended: false }), async (req, res
   try {
     ({ profile } = await saml.validatePostResponseAsync(req.body));
   } catch (err) {
-    return res.status(401).send(`SAML login failed: ${err.message}`);
+    // The reason can quote what the sender posted, so it goes to the log, not to the page.
+    console.warn('[saml] sign-in refused:', err.message);
+    return res.status(401).type('text/plain').send('SAML login failed');
   }
 
   const result = await resolveSsoLogin(profile, samlConfig);
-  if (result.status) return res.status(result.status).send(result.message);
+  if (result.status) return res.status(result.status).type('text/plain').send(result.message);
   const { admin } = result;
 
-  const token = jwt.sign({ sub: admin.id, email: admin.email, tenantId: admin.tenantId }, config.jwtSecret, { expiresIn: '12h' });
+  // The browser gets a one-time code, not the session token, so no token ever appears in a web
+  // address (history, logs, Referer headers). The page trades the code for a session.
+  const code = await issueSsoCode(admin.id);
   const redirectUrl = new URL('/sso/callback', siteConfig().corsOrigin);
-  redirectUrl.searchParams.set('token', token);
-  redirectUrl.searchParams.set('email', admin.email);
+  redirectUrl.searchParams.set('code', code);
+  res.set('Cache-Control', 'no-store');
   res.redirect(redirectUrl.toString());
+});
+
+// Trades the code from the redirect for a session, once, within a minute. Answers like a sign-in.
+samlRouter.post('/exchange', async (req, res) => {
+  const adminId = await consumeSsoCode(req.body?.code);
+  const admin = adminId ? await rawPrisma.admin.findUnique({ where: { id: adminId } }) : null;
+  if (!admin) return res.status(401).json({ error: 'This sign-in link has expired. Sign in again.' });
+  await ensureSiteLoaded(admin.tenantId);
+  // Permissions are read from the account's own site.
+  const body = await runWithTenant(admin.tenantId, () => sessionBody(admin));
+  res.set('Cache-Control', 'no-store');
+  res.json(body);
 });

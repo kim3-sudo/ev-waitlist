@@ -69,6 +69,22 @@ export function AuthProvider({ children }) {
       if (newPermissions) setPermissions(newPermissions);
     }
 
+    function logout() {
+      localStorage.removeItem('adminToken');
+      localStorage.removeItem('adminEmail');
+      localStorage.removeItem('adminMustChangePassword');
+      localStorage.removeItem('adminRole');
+      localStorage.removeItem('adminPermissions');
+      localStorage.removeItem('adminInstance');
+      localStorage.removeItem('adminSite');
+      setInstanceAdmin(false);
+      setToken(null);
+      setEmail(null);
+      setMustChangePassword(false);
+      setRole(null);
+      setPermissions([]);
+    }
+
     return {
       token,
       email,
@@ -99,25 +115,25 @@ export function AuthProvider({ children }) {
         return data.permissions;
       },
       setSession,
+      // After a password change the server ends the other sign-ins and sends a fresh token for this one.
+      replaceToken(newToken) {
+        if (!newToken) return;
+        localStorage.setItem('adminToken', newToken);
+        setToken(newToken);
+      },
+      // Ends every sign-in of this account, on every device, then signs out here.
+      async logoutEverywhere() {
+        try {
+          await api.post('/api/auth/logout-all');
+        } finally {
+          logout();
+        }
+      },
       clearPasswordChange() {
         localStorage.setItem('adminMustChangePassword', 'false');
         setMustChangePassword(false);
       },
-      logout() {
-        localStorage.removeItem('adminToken');
-        localStorage.removeItem('adminEmail');
-        localStorage.removeItem('adminMustChangePassword');
-        localStorage.removeItem('adminRole');
-        localStorage.removeItem('adminPermissions');
-        localStorage.removeItem('adminInstance');
-        localStorage.removeItem('adminSite');
-        setInstanceAdmin(false);
-        setToken(null);
-        setEmail(null);
-        setMustChangePassword(false);
-        setRole(null);
-        setPermissions([]);
-      },
+      logout,
     };
   }, [token, email, mustChangePassword, role, permissions, instanceAdmin]);
 

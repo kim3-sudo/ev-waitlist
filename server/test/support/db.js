@@ -12,6 +12,7 @@ import { resetOpenStreams } from '../../src/rateLimit/middleware.js';
 export async function resetDb() {
   await prisma.$transaction([
     prisma.rateLimitSettings.deleteMany(),
+    prisma.ssoLoginCode.deleteMany(),
     prisma.webhookDelivery.deleteMany(),
     prisma.webhookEndpoint.deleteMany(),
     prisma.subscription.deleteMany(),

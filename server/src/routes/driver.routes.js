@@ -2,6 +2,7 @@ import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import { prisma } from '../db.js';
 import { requireDriver } from '../auth/auth.middleware.js';
+import { revokeSessions, signSessionToken } from '../auth/sessionToken.js';
 import { ensureCredential } from '../services/wallet/credentialService.js';
 import { appleCheck, googleCredentials, walletStatus } from '../services/wallet/walletSettings.js';
 import { buildPkpass } from '../services/wallet/applePass.js';
@@ -59,7 +60,9 @@ driverRouter.put('/password', requireDriver, async (req, res) => {
     where: { id: account.id },
     data: { passwordHash: await bcrypt.hash(newPassword, 10) },
   });
-  res.json({ ok: true });
+  // A new password ends every other sign-in. This device gets a fresh token and stays signed in.
+  const updated = await revokeSessions(account.id);
+  res.json({ ok: true, token: signSessionToken(updated, '30d') });
 });
 
 // Checks a vehicle form. On an update, fields that were not sent are left out.

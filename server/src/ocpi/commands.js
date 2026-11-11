@@ -1,6 +1,6 @@
 import { prisma } from '../db.js';
 import { registry } from '../services/stationRegistry.js';
-import { partnerRequest, theirTokenOf } from './client.js';
+import { partnerRequest } from './client.js';
 import { evseUid } from './mappers.js';
 
 // Commands a roaming partner sends us (OCPI Commands module). The partner gets an
@@ -29,7 +29,7 @@ async function findConnector(station, evse) {
 // ask again.
 export async function postCommandResult(partner, responseUrl, result) {
   if (!responseUrl) return;
-  const res = await partnerRequest(theirTokenOf(partner), 'POST', responseUrl, { result });
+  const res = await partnerRequest(partner, 'POST', responseUrl, { result });
   if (!res.ok) console.error(`Command result to ${responseUrl} failed (HTTP ${res.status}).`);
 }
 

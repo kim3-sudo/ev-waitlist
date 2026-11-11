@@ -71,7 +71,11 @@ describe('forced passphrase change', () => {
       .send({ currentPassword: creds.password, newPassword: 'Brand-New-Passphrase-42' });
     assert.equal(changed.status, 200);
 
-    const unlocked = await request(app).get('/api/admin/stations').set(headers);
+    // The change ends the old token (it could be a stolen one) and returns a fresh one.
+    assert.ok(changed.body.token);
+    const oldToken = await request(app).get('/api/admin/stations').set(headers);
+    assert.equal(oldToken.status, 401);
+    const unlocked = await request(app).get('/api/admin/stations').set({ Authorization: `Bearer ${changed.body.token}` });
     assert.equal(unlocked.status, 200);
 
     const relogin = await login(creds.email, 'Brand-New-Passphrase-42');

@@ -1,5 +1,4 @@
-import jwt from 'jsonwebtoken';
-import { config } from '../config.js';
+import { readSessionToken, sessionIsCurrent } from './sessionToken.js';
 import { rawPrisma } from '../db.js';
 import { resolvePermissions } from '../services/roleService.js';
 import { enterTenant } from '../tenancy/context.js';
@@ -23,27 +22,23 @@ async function verifySession(req, res, next, { allowPasswordChange, driverRoute 
     return res.status(401).json({ error: 'Missing bearer token' });
   }
 
-  let payload;
-  try {
-    payload = jwt.verify(token, config.jwtSecret);
-  } catch {
-    return res.status(401).json({ error: 'Invalid or expired token' });
-  }
-  // Typed tokens (such as the pre-auth token issued before the second factor) are not sessions.
-  if (payload.type !== undefined) {
-    return res.status(401).json({ error: 'Invalid or expired token' });
-  }
+  // Only a session token this server signed. A typed token (such as the pre-auth token issued before
+  // the second factor) is not a session.
+  const payload = readSessionToken(token);
+  if (!payload) return res.status(401).json({ error: 'Invalid or expired token' });
 
   let admin;
   try {
     admin = await rawPrisma.admin.findUnique({
       where: { id: payload.sub },
-      select: { mustChangePassword: true, role: true, tenantId: true, instanceAdmin: true },
+      select: { mustChangePassword: true, role: true, tenantId: true, instanceAdmin: true, sessionVersion: true },
     });
   } catch (err) {
     return next(err);
   }
   if (!admin) return res.status(401).json({ error: 'Invalid or expired token' });
+  // A token made before the account's sessions were last revoked.
+  if (!sessionIsCurrent(payload, admin)) return res.status(401).json({ error: 'Invalid or expired token' });
   // Tokens issued before sites existed carry no site; they belong to the default site.
   if (payload.tenantId !== undefined && payload.tenantId !== admin.tenantId) {
     return res.status(401).json({ error: 'Invalid or expired token' });
@@ -145,6 +140,12 @@ export function requireDriver(req, res, next) {
     },
     { allowPasswordChange: false, driverRoute: true },
   );
+}
+
+// Any signed-in account, admin or driver, whatever its permissions. For things everyone may do to
+// their own session, such as signing out everywhere.
+export function requireAnySession(req, res, next) {
+  return verifySession(req, res, next, { allowPasswordChange: true, driverRoute: true });
 }
 
 // Only for the endpoints needed to finish a forced password change.

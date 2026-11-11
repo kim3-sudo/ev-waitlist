@@ -69,6 +69,8 @@ Put the server behind a reverse proxy that terminates TLS, and configure the pro
 | `CONFIG_ENCRYPTION_KEY` | Optional. See [Secrets](#secrets) |
 | `DATA_DIR` | Optional. Where `secrets.json` lives (default `data`) |
 | `TRUST_PROXY` | Optional. How many reverse proxies sit in front of the server, so rate limits and the audit log see the real client address. See [Rate limiting](rate-limiting.md#behind-a-reverse-proxy) |
+| `WEBHOOK_ALLOW_PRIVATE_NETWORKS` | Optional. Set to `1` to let webhooks post to private addresses and `http://`. See [webhooks](charge-point-features.md) |
+| `OCPI_ALLOW_PRIVATE_NETWORKS` | Optional. Set to `1` to let the server call OCPI partners on private addresses and `http://`. See [OCPI](ocpi.md#what-the-server-will-call) |
 | `OCPP_REQUIRE_AUTH` | Optional. Set to `1` to refuse charge points that have no connection key. See [Charge point connection keys](charge-point-features.md#connection-keys) |
 
 Set everything else in the admin pages. `.env.example` lists optional first-run seeds, such as `PUBLIC_URL` and `CORS_ORIGIN`. The server copies them into the database once.
