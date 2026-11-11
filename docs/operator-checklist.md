@@ -47,6 +47,7 @@ Each site checks events with its own secret.
 ## 5. Stations
 
 - [ ] Add charge points under **Charge points**. Use the identity your charge points use in their address.
+- [ ] Copy each charge point's **connection key** when you add it, and enter it in the charge point as its Basic-auth password (the key is shown once). Set `OCPP_REQUIRE_AUTH=1` once every charge point has one.
 - [ ] Group chargers that share a queue into a **Zone**.
 - [ ] Check the reservation window under **System**.
 - [ ] Review line-cutting reports under **Complaints**, and resolve them.

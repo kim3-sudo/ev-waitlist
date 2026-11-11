@@ -260,3 +260,36 @@ describe('GET /api/auth/me', () => {
   });
 });
 
+
+describe('pre-auth token (password entered, second factor pending)', () => {
+  async function preAuthFor(admin) {
+    const { body } = await request(app)
+      .post('/api/auth/login')
+      .send({ email: admin.email, password: 'CorrectHorse1!' });
+    assert.ok(body.preAuthToken);
+    return body.preAuthToken;
+  }
+
+  it('is not accepted as a session on admin routes', async () => {
+    const admin = await createAdmin({ password: 'CorrectHorse1!', mfa: true });
+    const preAuthToken = await preAuthFor(admin);
+    const res = await request(app).get('/api/auth/me').set('Authorization', `Bearer ${preAuthToken}`);
+    assert.equal(res.status, 401);
+  });
+
+  it('cannot replace an existing authenticator, with or without a session', async () => {
+    const admin = await createAdmin({ password: 'CorrectHorse1!', mfa: true });
+    const preAuthToken = await preAuthFor(admin);
+    const before = (await prisma.admin.findUnique({ where: { id: admin.id } })).mfaSecret;
+
+    const start = await request(app).post('/api/auth/mfa/setup/start').send({ preAuthToken });
+    const res = await request(app)
+      .post('/api/auth/mfa/setup/confirm')
+      .send({ preAuthToken, secret: start.body.secret, code: totpCode(start.body.secret) });
+    assert.equal(res.status, 409);
+    assert.equal(res.body.token, undefined);
+
+    const after = (await prisma.admin.findUnique({ where: { id: admin.id } })).mfaSecret;
+    assert.equal(after, before);
+  });
+});

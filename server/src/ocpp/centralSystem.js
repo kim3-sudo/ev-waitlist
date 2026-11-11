@@ -20,6 +20,7 @@ import { markLatestDiagnosticsFailed } from '../services/diagnosticsLogs.js';
 import { attachOcpp20 } from './ocpp20.js';
 import { OCPP20 } from '../services/ocpp20Commands.js';
 import { isBlockedIdTag } from '../services/localList.js';
+import { keylessAllowed, stationKeyMatches } from '../services/stationAuth.js';
 
 // An accepted idTagInfo. When the turn has an end time, it is given as expiryDate so the charge
 // point can drop the tag from its cache once the turn is over.
@@ -56,14 +57,28 @@ export function createCentralSystem() {
     strictMode: true,
   });
 
-  // Only charge points that an admin has provisioned (i.e. exist in the
-  // Station table) are allowed to connect.
+  // Only charge points that an admin has provisioned (i.e. exist in the Station table) and that
+  // present their connection key as the Basic-auth password may connect. An unknown identity and
+  // a wrong key get the same answer, so the reply does not reveal which identities exist.
   server.auth(async (accept, reject, handshake) => {
     // Identities are unique across sites, so the station row tells us its site.
     const station = await rawPrisma.station.findUnique({ where: { identity: handshake.identity } });
     if (!station) {
-      reject(404, 'Unknown charge point identity');
+      reject(401, 'Unauthorized');
       return;
+    }
+    if (station.authKeyHash) {
+      if (!stationKeyMatches(station.authKeyHash, handshake.password)) {
+        console.warn(`[ocpp] refused ${station.identity} from ${handshake.remoteAddress}: wrong or missing key`);
+        reject(401, 'Unauthorized');
+        return;
+      }
+    } else if (!keylessAllowed()) {
+      console.warn(`[ocpp] refused ${station.identity} from ${handshake.remoteAddress}: no key set and OCPP_REQUIRE_AUTH=1`);
+      reject(401, 'Unauthorized');
+      return;
+    } else {
+      console.warn(`[ocpp] ${station.identity} connected without a key. Give it a connection key in the admin app.`);
     }
     await ensureSiteLoaded(station.tenantId);
     accept({ stationId: station.id, identity: station.identity, tenantId: station.tenantId });
@@ -83,14 +98,21 @@ export function createCentralSystem() {
         });
       return client.handle(...args.slice(0, -1), scoped);
     };
+    // A reconnect after a network change can arrive before the old socket is noticed as dead.
+    // The newer, authenticated connection wins and the stale one is closed.
+    const stale = registry.getClient(identity);
     registry.add(identity, client);
+    if (stale && stale !== client) stale.close({ code: 1000, reason: 'Replaced by a new connection' }).catch(() => {});
     console.log(`[ocpp] ${identity} connected`);
     enterTenant(tenantId, () =>
       prisma.station.updateMany({ where: { id: stationId }, data: { offlineSince: null } }),
     ).catch((err) => console.error(`[ocpp] connect bookkeeping for ${identity} failed:`, err.message));
 
     const onDisconnect = () => {
-      registry.remove(identity);
+      // A replaced connection closing must not mark the charge point offline while the new one is live.
+      const replaced = registry.isConnected(identity) && registry.getClient(identity) !== client;
+      registry.remove(identity, client);
+      if (replaced) return;
       enterTenant(tenantId, () =>
         prisma.station.updateMany({ where: { id: stationId, offlineSince: null }, data: { offlineSince: new Date() } }),
       ).catch((err) => console.error(`[ocpp] disconnect bookkeeping for ${identity} failed:`, err.message));

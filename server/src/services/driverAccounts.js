@@ -33,6 +33,8 @@ export async function signedInDriver(req) {
   } catch {
     return null;
   }
+  // A typed token (the MFA pre-auth token) is not a session.
+  if (payload.type !== undefined) return null;
   const account = await rawPrisma.admin.findUnique({ where: { id: payload.sub } });
   if (!account || account.tenantId !== currentTenantId()) return null;
   const permissions = await resolvePermissions(account.role);

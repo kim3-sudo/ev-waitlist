@@ -70,8 +70,11 @@ async function resolveAdminForMfaStep(req) {
   if (scheme === 'Bearer' && bearerToken) {
     try {
       const payload = jwt.verify(bearerToken, config.jwtSecret);
-      const admin = await prisma.admin.findUnique({ where: { id: payload.sub } });
-      if (admin) return { admin, preAuth: false };
+      // A pre-auth token in the Bearer header must not count as a session.
+      if (payload.type === undefined) {
+        const admin = await prisma.admin.findUnique({ where: { id: payload.sub } });
+        if (admin) return { admin, preAuth: false };
+      }
     } catch {
       // fall through to preAuthToken
     }
@@ -161,6 +164,12 @@ authRouter.post('/mfa/setup/start', tenantFromAdminToken, async (req, res) => {
 authRouter.post('/mfa/setup/confirm', tenantFromAdminToken, async (req, res) => {
   const resolved = await resolveAdminForMfaStep(req);
   if (!resolved) return res.status(401).json({ error: 'Not authenticated' });
+
+  // Replacing an existing second factor would let a password-only login take over the account.
+  // To change the authenticator, turn MFA off first (which needs the password) and enrol again.
+  if (resolved.admin.mfaEnabled) {
+    return res.status(409).json({ error: 'Two-factor authentication is already on. Turn it off before setting it up again.' });
+  }
 
   const { secret, code } = req.body ?? {};
   if (!secret || !code || !authenticator.check(code, secret)) {

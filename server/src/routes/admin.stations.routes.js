@@ -7,6 +7,7 @@ import { CONNECTOR_STANDARDS, CONNECTOR_FORMATS, POWER_TYPES, powerTypeAllowed }
 import { latestReadings } from '../services/meterService.js';
 import { cleanText, coordinatesProblem, locatorTextFields } from '../services/locator.js';
 import { normalizeParkingKeys, readParkingKeys } from '../services/siteFeatures.js';
+import { newStationKey } from '../services/stationAuth.js';
 
 export const adminStationsRouter = Router();
 
@@ -36,6 +37,8 @@ function serialize(station) {
     smartChargingEnabled: Boolean(station.smartChargingEnabled),
     firmwareUpdateEnabled: Boolean(station.firmwareUpdateEnabled),
     localListEnabled: Boolean(station.localListEnabled),
+    // Whether the charge point has a connection key. The key itself is never stored or returned.
+    hasAuthKey: Boolean(station.authKeyHash),
     online: registry.isConnected(station.identity),
     lastSeenAt: station.lastSeenAt ?? null,
     offlineSince: station.offlineSince ?? null,
@@ -456,9 +459,12 @@ adminStationsRouter.post('/', async (req, res) => {
   const resolvedZone = await resolveZoneId(zoneId);
   if (resolvedZone.error) return res.status(400).json({ error: resolvedZone.error });
 
+  // The connection key is shown once, in this response. Only its hash is kept.
+  const { key: authKey, hash: authKeyHash } = newStationKey();
   const station = await prisma.station.create({
     data: {
       identity,
+      authKeyHash,
       name,
       vendor,
       model,
@@ -482,7 +488,8 @@ adminStationsRouter.post('/', async (req, res) => {
     where: { id: station.id },
     include: { connectors: true, zone: true },
   });
-  res.status(201).json(serialize(withConnectors));
+  res.set('Cache-Control', 'no-store');
+  res.status(201).json({ ...serialize(withConnectors), authKey });
 });
 
 adminStationsRouter.put('/:id', async (req, res) => {
@@ -557,10 +564,26 @@ adminStationsRouter.put('/:id', async (req, res) => {
   res.json(serialize(updated));
 });
 
+// Makes a new connection key for a charge point, replacing the old one (also for charge points
+// that have none yet). The key is in this response only. The charge point is disconnected so it
+// must come back with the new key.
+adminStationsRouter.post('/:id/auth-key', async (req, res) => {
+  const station = await prisma.station.findUnique({ where: { id: req.params.id } });
+  if (!station) return res.status(404).json({ error: 'Station not found' });
+
+  const { key, hash } = newStationKey();
+  await prisma.station.update({ where: { id: station.id }, data: { authKeyHash: hash } });
+  registry.getClient(station.identity)?.close({ code: 1000, reason: 'Connection key changed' }).catch(() => {});
+  res.set('Cache-Control', 'no-store');
+  res.json({ authKey: key });
+});
+
 adminStationsRouter.delete('/:id', async (req, res) => {
   const station = await prisma.station.findUnique({ where: { id: req.params.id } });
   if (!station) return res.status(404).json({ error: 'Station not found' });
 
   await prisma.station.delete({ where: { id: station.id } });
+  // A deleted charge point must not stay connected on its open socket.
+  registry.getClient(station.identity)?.close({ code: 1000, reason: 'Charge point removed' }).catch(() => {});
   res.status(204).send();
 });

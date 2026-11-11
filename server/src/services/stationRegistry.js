@@ -6,7 +6,9 @@ export const registry = {
   add(identity, client) {
     clientsByIdentity.set(identity, client);
   },
-  remove(identity) {
+  // With `client`, removes only if that connection is still the registered one.
+  remove(identity, client) {
+    if (client && clientsByIdentity.get(identity) !== client) return;
     clientsByIdentity.delete(identity);
   },
   getClient(identity) {

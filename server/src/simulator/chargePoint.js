@@ -12,6 +12,7 @@
 //
 // Environment:
 //   CS_ENDPOINT        central system URL (default ws://localhost:4000/ocpp)
+//   CS_AUTH_KEY        the charge point's connection key (needed once it has one)
 //   SIM_EVSE_PROFILE   basic or full (default basic); can also be changed on the control page
 //   SIM_UI_PORT        control page port on 127.0.0.1 (default 4100; 0 turns it off)
 //
@@ -259,6 +260,8 @@ function applyConfiguration(key, value) {
 const cli = new RPCClient({
   endpoint,
   identity,
+  // The connection key the admin app shows when a charge point is added.
+  password: process.env.CS_AUTH_KEY,
   protocols: ['ocpp1.6'],
   strictMode: true,
 });

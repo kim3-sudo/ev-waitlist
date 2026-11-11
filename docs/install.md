@@ -54,7 +54,7 @@ In **Admin > System**, enter your public address, such as `https://ev.example.co
 
 Put the server behind a reverse proxy that terminates TLS, and configure the proxy as follows:
 
-- Forward WebSocket upgrades on `/ocpp/`.
+- Forward WebSocket upgrades on `/ocpp/`, and have charge points connect with `wss://` so their connection key is encrypted in transit.
 - Turn off buffering for paths ending in `/live`. In nginx, set `proxy_buffering off;`.
 
 ## Settings in `.env`
@@ -67,6 +67,7 @@ Put the server behind a reverse proxy that terminates TLS, and configure the pro
 | `JWT_SECRET` | Optional. See [Secrets](#secrets) |
 | `CONFIG_ENCRYPTION_KEY` | Optional. See [Secrets](#secrets) |
 | `DATA_DIR` | Optional. Where `secrets.json` lives (default `data`) |
+| `OCPP_REQUIRE_AUTH` | Optional. Set to `1` to refuse charge points that have no connection key. See [Charge point connection keys](charge-point-features.md#connection-keys) |
 
 Set everything else in the admin pages. `.env.example` lists optional first-run seeds, such as `PUBLIC_URL` and `CORS_ORIGIN`. The server copies them into the database once.
 

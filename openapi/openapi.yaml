@@ -234,6 +234,37 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
 
+  /stations/{id}/auth-key:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      tags: [Charge points]
+      operationId: rotateStationAuthKey
+      summary: Make a new connection key
+      description: Replaces the charge point's connection key (or gives one to a charge point that has none). The charge point is disconnected and must reconnect with the new key, which is returned once.
+      x-required-permission: api.stations.write
+      responses:
+        '200':
+          description: The new key.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [authKey]
+                properties:
+                  authKey:
+                    type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
   /stations/{id}/status:
     parameters:
       - $ref: '#/components/parameters/StationId'
@@ -1485,6 +1516,12 @@ components:
           type: [string, 'null']
         zoneName:
           type: [string, 'null']
+        hasAuthKey:
+          type: boolean
+          description: Whether the charge point has a connection key. Charge points without one can connect with the identity alone, unless the server sets OCPP_REQUIRE_AUTH=1.
+        authKey:
+          type: string
+          description: The connection key (the OCPP Basic-auth password). Returned only when the charge point is added, and never again. Make a new one with POST /stations/{id}/auth-key.
         online:
           type: boolean
           description: Whether the charge point is connected right now.

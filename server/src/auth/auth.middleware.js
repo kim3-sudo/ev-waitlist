@@ -29,6 +29,10 @@ async function verifySession(req, res, next, { allowPasswordChange, driverRoute 
   } catch {
     return res.status(401).json({ error: 'Invalid or expired token' });
   }
+  // Typed tokens (such as the pre-auth token issued before the second factor) are not sessions.
+  if (payload.type !== undefined) {
+    return res.status(401).json({ error: 'Invalid or expired token' });
+  }
 
   let admin;
   try {

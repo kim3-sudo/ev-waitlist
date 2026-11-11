@@ -166,3 +166,14 @@ Events: charge paid, charge reversed, session started, session stopped, station 
 Each post is JSON with headers `X-Plugyard-Event`, `X-Plugyard-Delivery`, and `X-Plugyard-Signature`. The signature has the form `t=<unix seconds>,v1=<HMAC-SHA256 of "<t>.<body>">`, keyed with the endpoint secret. Verify the signature, and reject timestamps older than five minutes.
 
 Failed posts retry after 1, 2, 4 minutes, and so on, up to six hours, then stop after ten attempts. Use the delivery log to see results and retry an event. The server blocks addresses on private networks unless you set `WEBHOOK_ALLOW_PRIVATE_NETWORKS=1`.
+
+## Connection keys
+
+A charge point proves who it is with a connection key, sent as the password of the OCPP websocket's Basic authentication (OCPP security profile 1). The username is the charge point's identity.
+
+- The admin app makes a key when you add a charge point and shows it once. Only a hash is stored, so it cannot be shown again. Enter it in the charge point's "AuthorizationKey" or equivalent setting.
+- To replace a key, or to give one to a charge point that has none, make a new key (`POST /api/admin/stations/{id}/auth-key`). The charge point is disconnected and must reconnect with the new key.
+- Connect charge points over `wss://`. Over `ws://` the key travels unencrypted.
+- A wrong key and an unknown identity get the same `401 Unauthorized`.
+- Charge points added before keys existed have none, and can still connect with the identity alone. The server logs a warning each time. Once every charge point has a key, set `OCPP_REQUIRE_AUTH=1` to refuse the ones that do not.
+- To test with the simulator, set `CS_AUTH_KEY` to the key.

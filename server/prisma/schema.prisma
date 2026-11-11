@@ -245,6 +245,9 @@ model Station {
   // OCPP "identity" -- the charge point ID used in the websocket URL
   // (ws://host:port/ocpp/<identity>) and in every OCPP message exchange.
   identity          String    @unique
+  // SHA-256 of the charge point's connection key (OCPP Basic-auth password). Null on charge points
+  // set up before keys existed: they can still connect until an admin gives them a key.
+  authKeyHash       String?
   name              String
   vendor            String?
   model             String?
